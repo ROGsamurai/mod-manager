@@ -1,0 +1,52 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-deep: #111; --bg-base: #181818; --bg-surface: #1e1e1e; --bg-elevated: #272727;
+  --bg-hover: #333; --bg-active: #3a3a3a;
+  --accent: #da9b3c; --accent-dim: #b07830; --accent-glow: rgba(218,155,60,.25);
+  --green: #3d8c35; --green-bright: #5cb950; --red: #8b2020; --red-bright: #c0392b;
+  --info: #3d7fd9; --info-bright: #5b9bf1;
+  --text: #f0f0f0; --text-2: #cccccc; --text-3: #999999; --text-4: #707070;
+  --border: #2e2e2e; --border-2: #3e3e3e;
+  --scrollbar: #444; --scrollbar-hover: #666;
+  --font: 'Rajdhani', sans-serif; --mono: 'Share Tech Mono', monospace;
+  --radius: 4px; --radius-lg: 8px;
+}
+html, body, #root { height: 100%; overflow: hidden; }
+body { font-family: var(--font); font-size: 16px; color: var(--text); background: var(--bg-deep); -webkit-font-smoothing: antialiased; user-select: none; }
+::-webkit-scrollbar { width: 14px; } ::-webkit-scrollbar-track { background: transparent; margin-right: 2px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; } ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); border: 3px solid transparent; background-clip: padding-box; }
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideDown { from { opacity:0; transform: translateY(-6px) } to { opacity:1; transform: translateY(0) } }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+@keyframes spin { to { transform: rotate(360deg) } }
+@keyframes dropGlow { 0%,100%{box-shadow:inset 0 0 20px var(--accent-glow)} 50%{box-shadow:inset 0 0 50px var(--accent-glow)} }
+/* Subtle pulsing glow for mods waiting to be updated — draws the eye without being loud */
+@keyframes updateGlow {
+  0%,100% { box-shadow: 0 0 0 1px var(--accent), 0 0 8px rgba(218,155,60,.25); }
+  50%     { box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(218,155,60,.55); }
+}
+@keyframes updateBtnGlow {
+  0%,100% { box-shadow: 0 0 4px rgba(218,155,60,.4); }
+  50%     { box-shadow: 0 0 14px rgba(218,155,60,.8); }
+}
+/* Green-tinted variant for the "Update All" header button, which uses the green accent */
+@keyframes updateAllBtnGlow {
+  0%,100% { box-shadow: 0 0 4px rgba(92,185,80,.4); }
+  50%     { box-shadow: 0 0 14px rgba(92,185,80,.85); }
+}
+.drag-region { -webkit-app-region: drag; } .no-drag { -webkit-app-region: no-drag; }
+button { cursor: pointer; font-family: var(--font); border: none; outline: none; }
+input, select { font-family: var(--font); outline: none; }
+.btn { padding: 8px 16px; border-radius: var(--radius); font-weight: 600; font-size: 15px; transition: all .15s; display: inline-flex; align-items: center; gap: 6px; }
+.btn-accent { background: var(--accent); color: var(--bg-deep); } .btn-accent:hover { background: var(--accent-dim); }
+.btn-danger { background: var(--red); color: #fcc; } .btn-danger:hover { background: var(--red-bright); }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-2); } .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+.btn-sm { padding: 5px 12px; font-size: 14px; }
+.input { background: var(--bg-base); color: var(--text-2); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 8px 12px; font-size: 15px; width: 100%; transition: border-color .15s; }
+.input:focus { border-color: var(--accent); }
+.select { background: var(--bg-base); color: var(--text-2); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 8px 12px; font-size: 15px; cursor: pointer; }
+.badge { padding: 3px 10px; border-radius: 10px; font-size: 13px; font-weight: 700; font-family: var(--mono); }
+.toast { position: fixed; top: 14px; right: 14px; padding: 12px 24px; border-radius: var(--radius); font-weight: 600; font-size: 15px; z-index: 9999; box-shadow: 0 4px 24px rgba(0,0,0,.6); animation: slideDown .25s ease; pointer-events: none; }
+.toast-success { background: var(--green); color: #fff; } .toast-error { background: var(--red-bright); color: #fff; }
+.toast-info { background: var(--bg-active); color: var(--text); border: 1px solid var(--border-2); } .toast-warn { background: #8b4513; color: #fff; }
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
