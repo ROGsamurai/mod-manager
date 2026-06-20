@@ -229,16 +229,26 @@ ipcMain.handle('mods:install', async (_, filename, targetKey, modName, skipRemov
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:list', () => modManager.getInstalledMods());
-ipcMain.handle('mods:uninstall', async (_, id) => {
-  try { await modManager.uninstallMod(id); return { success: true }; }
+ipcMain.handle('mods:uninstall', async (event, id) => {
+  try {
+    await modManager.uninstallMod(id, (done, total) => {
+      try { event.sender.send('mods:toggle-progress', { id, done, total }); } catch {}
+    });
+    return { success: true };
+  }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:fresh-install', async () => {
   try { return await modManager.freshInstall(); }
   catch (e) { return { success: false, error: e.message }; }
 });
-ipcMain.handle('mods:toggle', async (_, id) => {
-  try { return { success: true, mod: await modManager.toggleMod(id) }; }
+ipcMain.handle('mods:toggle', async (event, id) => {
+  try {
+    const mod = await modManager.toggleMod(id, (done, total) => {
+      try { event.sender.send('mods:toggle-progress', { id, done, total }); } catch {}
+    });
+    return { success: true, mod };
+  }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:conflicts', () => modManager.detectConflicts());
@@ -262,8 +272,13 @@ ipcMain.handle('mods:mark-core-bulk', (_, ids, isCore) => {
 ipcMain.handle('profiles:list', () => modManager.getProfiles());
 ipcMain.handle('profiles:active', () => modManager.getActiveProfileId());
 ipcMain.handle('profiles:create', (_, name) => modManager.createProfile(name));
-ipcMain.handle('profiles:activate', async (_, id) => {
-  try { await modManager.activateProfile(id); return { success: true }; }
+ipcMain.handle('profiles:activate', async (event, id) => {
+  try {
+    await modManager.activateProfile(id, (p) => {
+      try { event.sender.send('profiles:activate-progress', p); } catch {}
+    });
+    return { success: true };
+  }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('profiles:delete', (_, id) => { modManager.deleteProfile(id); return { success: true }; });

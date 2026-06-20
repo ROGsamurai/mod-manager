@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('api', {
   uninstallMod: (id) => ipcRenderer.invoke('mods:uninstall', id),
   freshInstall: () => ipcRenderer.invoke('mods:fresh-install'),
   toggleMod: (id) => ipcRenderer.invoke('mods:toggle', id),
+  onToggleProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('mods:toggle-progress', handler);
+    return () => ipcRenderer.removeListener('mods:toggle-progress', handler);
+  },
   getConflicts: () => ipcRenderer.invoke('mods:conflicts'),
   markCore: (id, isCore) => ipcRenderer.invoke('mods:mark-core', id, isCore),
   markCoreBulk: (ids, isCore) => ipcRenderer.invoke('mods:mark-core-bulk', ids, isCore),
@@ -28,6 +33,11 @@ contextBridge.exposeInMainWorld('api', {
   getActiveProfile: () => ipcRenderer.invoke('profiles:active'),
   createProfile: (name) => ipcRenderer.invoke('profiles:create', name),
   activateProfile: (id) => ipcRenderer.invoke('profiles:activate', id),
+  onProfileProgress: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('profiles:activate-progress', handler);
+    return () => ipcRenderer.removeListener('profiles:activate-progress', handler);
+  },
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
   exportProfile: (id) => ipcRenderer.invoke('profiles:export', id),
   importProfile: () => ipcRenderer.invoke('profiles:import'),

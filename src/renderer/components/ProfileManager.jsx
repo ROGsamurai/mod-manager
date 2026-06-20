@@ -7,6 +7,13 @@ export default function ProfileManager({ notify, onRefresh }) {
   const [activeId, setActiveId] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [activateProgress, setActivateProgress] = useState(null);
+
+  useEffect(() => {
+    if (!window.api.onProfileProgress) return;
+    const off = window.api.onProfileProgress(data => setActivateProgress(data));
+    return off;
+  }, []);
 
   const load = async () => {
     try {
@@ -24,10 +31,15 @@ export default function ProfileManager({ notify, onRefresh }) {
   };
   const activate = async id => {
     setBusy(true);
-    const r = await window.api.activateProfile(id);
-    if (r.success) { notify('Profile activated!', 'success'); await onRefresh(); await load(); }
-    else notify(r.error, 'error');
-    setBusy(false);
+    setActivateProgress(null);
+    try {
+      const r = await window.api.activateProfile(id);
+      if (r.success) { notify('Profile activated!', 'success'); await onRefresh(); await load(); }
+      else notify(r.error, 'error');
+    } finally {
+      setBusy(false);
+      setActivateProgress(null);
+    }
   };
   const remove = async (id, name) => { await window.api.deleteProfile(id); await load(); notify(`${t('Remove')}: "${name}"`, 'warn'); };
   const doExport = async (id) => {
@@ -87,10 +99,17 @@ export default function ProfileManager({ notify, onRefresh }) {
                     ✓ {t('Activated')}
                   </button>
                 ) : (
-                  <button className="btn btn-accent btn-sm" onClick={() => activate(p.id)} disabled={busy}>▶ {t('Activate')}</button>
+                  <button className="btn btn-accent btn-sm" onClick={() => activate(p.id)} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 96, justifyContent: 'center' }}>
+                    {busy && activateProgress ? (
+                      <>
+                        <span style={{ display: 'inline-block', width: 11, height: 11, border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+                        {activateProgress.total > 0 ? `${activateProgress.current}/${activateProgress.total}` : '…'}
+                      </>
+                    ) : busy ? '…' : `▶ ${t('Activate')}`}
+                  </button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={() => doExport(p.id)} title={t('Export')}>📤</button>
-                <button className="btn btn-danger btn-sm" onClick={() => remove(p.id, p.name)}>🗑</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => doExport(p.id)} title={t('Export')} disabled={busy}>📤</button>
+                <button className="btn btn-danger btn-sm" onClick={() => remove(p.id, p.name)} disabled={busy}>🗑</button>
               </div>
             );
           })}

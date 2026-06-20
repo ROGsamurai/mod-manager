@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
-export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onMarkCore }) {
+export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onMarkCore, togglingId, toggleProgress }) {
   const { t, tMod } = useI18n();
   const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState('All');
@@ -138,6 +138,9 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
     key: m.id, mod: m, i, conflict: conflictIds.has(m.id), missingDeps: depMap[m.id],
     onToggle: () => onToggle(m.id), onRemove: () => onRemove(m.id), onMarkCore: c => onMarkCore(m.id, c),
     selected: selected.has(m.id), onSelect: () => toggleSelect(m.id), t, tMod,
+    busy: togglingId === m.id,
+    progress: (toggleProgress && toggleProgress.id === m.id) ? toggleProgress : null,
+    anyToggling: !!togglingId,
   });
 
   return (
@@ -288,7 +291,7 @@ function FL({ label, children, style }) {
   </div>;
 }
 
-function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod }) {
+function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling }) {
   const [h, setH] = useState(false);
   const isCore = mod.core;
   const isPrefab = isCore && mod.files?.some(f => f.toLowerCase().includes('_prefabloader'));
@@ -297,7 +300,7 @@ function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, se
   const hasDeps = missingDeps && missingDeps.length > 0;
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: 'flex', padding: '8px 16px', alignItems: 'center', borderBottom: '1px solid var(--border)', transition: 'background .1s', fontSize: 15,
+      style={{ display: 'flex', padding: '8px 16px', alignItems: 'center', borderBottom: '1px solid var(--border)', transition: 'background .1s', fontSize: 15, position: 'relative',
         animation: `fadeIn .15s ease ${i * .015}s both`,
         background: selected ? 'var(--accent-glow)' : h ? 'var(--bg-hover)' : i % 2 === 0 ? 'var(--bg-base)' : 'var(--bg-surface)' }}>
       {hasCheckbox && (
@@ -308,8 +311,13 @@ function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, se
       <div style={{ width: 95 }}>
         {isCore ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, background: 'var(--accent-glow)', color: 'var(--accent)' }}>🔒 {isPrefab ? t('Prefab') : t('Core')}</span>
+        ) : busy ? (
+          <div title={t('Working…')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'default', background: 'var(--bg-active)' }}>
+            <span style={{ display: 'inline-block', width: 11, height: 11, border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+            {progress && progress.total > 0 ? `${Math.min(100, Math.round(progress.done / progress.total * 100))}%` : '…'}
+          </div>
         ) : (
-          <div onClick={onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', background: mod.enabled ? 'var(--green)' : 'var(--bg-active)' }}>
+          <div onClick={anyToggling ? undefined : onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, color: '#fff', cursor: anyToggling ? 'default' : 'pointer', opacity: anyToggling ? .5 : 1, background: mod.enabled ? 'var(--green)' : 'var(--bg-active)' }}>
             {mod.enabled ? `✓ ${t('On')}` : `✕ ${t('Off')}`}<span style={{ fontSize: 11, opacity: .6 }}>▾</span></div>
         )}
       </div>
@@ -330,9 +338,20 @@ function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, se
          <span style={{ color: 'var(--text-4)' }}>—</span>}
       </div>
       <div style={{ width: 100, display: 'flex', gap: 5, justifyContent: 'center' }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => onMarkCore(!isCore)} title={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')}>{isCore ? '🔓' : '🔒'}</button>
-        {!isCore && <button className="btn btn-danger btn-sm" onClick={onRemove}>🗑</button>}
+        <button className="btn btn-ghost btn-sm" disabled={anyToggling} onClick={() => onMarkCore(!isCore)} title={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')}>{isCore ? '🔓' : '🔒'}</button>
+        {!isCore && <button className="btn btn-danger btn-sm" disabled={anyToggling} onClick={anyToggling ? undefined : onRemove}>🗑</button>}
       </div>
+      {busy && (
+        <div style={{ position: 'absolute', left: 0, bottom: 0, height: 3, width: '100%', background: 'var(--bg-active)', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            background: 'var(--accent)',
+            transition: 'width .15s ease',
+            width: progress && progress.total > 0 ? `${Math.min(100, Math.round(progress.done / progress.total * 100))}%` : '15%',
+            ...(progress && progress.total > 0 ? {} : { animation: 'ctIndeterminate 1s ease-in-out infinite' }),
+          }} />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,3 +1,12 @@
+Version 1.0.6
+NEW
+- Progress bars when enabling/disabling a mod, uninstalling a mod, and switching profiles — large mods (hundreds of files) now show a live percentage and bar instead of appearing frozen, and buttons lock during the operation to prevent double-clicks
+- Support for Nexus's new download filename format that drops the trailing mod-ID/version/timestamp (e.g. "Collection Tracker v1.1.6.zip") while still parsing the old format
+IMPROVED
+- Mod-name parsing now strips trailing variant tags like "(HQ Base Game Sprites)" or "[Optional]" and reads a version that sits before the tag — same-name variants now correctly overwrite the existing mod instead of installing as a phantom second copy
+- Update-vs-reinstall detection now falls back to the archive's download date when the filename has no version (or the same version): a newer archive of an already-installed mod is recognized as an update
+- Build pinned to electron-builder 24.13.3 to reproduce the clean portable stub and avoid an antivirus false positive introduced by a newer builder version
+
 Version 1.0.3
 NEW
 - Added global exclude patterns applied automatically to every mod install, import, and scan — shared phone-app icons, BepInEx auto-regenerated configs, and BepInEx cache files are never tracked

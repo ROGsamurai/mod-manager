@@ -1018,7 +1018,16 @@ class ModManager {
 
   /** Strip trailing version numbers from a name for fuzzy matching */
   _baseName(name) {
-    return (name || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*v?\d+(\.\d+)*\s*$/i, '').trim();
+    return (name || '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      // Strip a trailing variant tag in ()/[] first — "(HQ Base Game Sprites)",
+      // "[Optional]" — so different downloads of the same mod collapse to one
+      // base key for overwrite/dedup detection.
+      .replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, '')
+      // Then strip a trailing version — "v1.1.6", "1.1.6".
+      .replace(/\s*v?\d+(\.\d+)*\s*$/i, '')
+      .trim();
   }
 
   /** Compare two version strings. Returns 1 if a > b, -1 if a < b, 0 if equal */
@@ -1041,7 +1050,7 @@ class ModManager {
     const installed = new Map();
     for (const mod of this.mods.values()) {
       const key = this._baseName(mod.name);
-      if (key) installed.set(key, mod.version || '');
+      if (key) installed.set(key, { version: mod.version || '', installedAt: mod.installedAt || '', archiveMtime: mod.archiveMtime || 0 });
     }
 
     // List directory entries. If the whole readdir fails (rare — usually permissions
@@ -1062,8 +1071,11 @@ class ModManager {
     for (const f of entries) {
       const parsed = this._parseNexusFilename(f);
       let size = 0;
+      let mtime = 0;
       try {
-        size = fs.statSync(path.join(dir, f)).size;
+        const st = fs.statSync(path.join(dir, f));
+        size = st.size;
+        mtime = st.mtimeMs;
       } catch (err) {
         // Keep the file in the list with size 0 so the user can see and delete it.
         // Common causes: OneDrive unsynced placeholder, file locked by AV, etc.
@@ -1072,6 +1084,7 @@ class ModManager {
       allFiles.push({
         filename: f,
         size,
+        mtime,
         parsedName: parsed.name,
         parsedVersion: parsed.version,
         base: this._baseName(parsed.name),
@@ -1089,19 +1102,43 @@ class ModManager {
     // For each group: newest is the main entry, older ones become downgrade options
     const result = [];
     for (const [base, files] of groups) {
-      files.sort((a, b) => this._compareVersions(b.parsedVersion || '0', a.parsedVersion || '0'));
+      // Sort by version (desc). When versions tie or are both missing — common
+      // now that Nexus filenames may omit the version, and for same-version
+      // variants like base vs "(HQ Base Game Sprites)" — fall back to the file's
+      // modified time (newest download first) so the most recent archive wins.
+      files.sort((a, b) => {
+        const cmp = this._compareVersions(b.parsedVersion || '0', a.parsedVersion || '0');
+        if (cmp !== 0) return cmp;
+        return (b.mtime || 0) - (a.mtime || 0);
+      });
       const newest = files[0];
       const olderFiles = files.slice(1);
 
-      const installedVersion = installed.get(base);
+      const inst = installed.get(base);
+      const installedVersion = inst ? inst.version : undefined;
+      // Is this staged archive a newer download than the one the current copy
+      // was installed from? Prefer an archive-date-to-archive-date comparison
+      // (the mtime of the archive we installed, captured at install time). Fall
+      // back to the install timestamp for mods installed before that was tracked.
+      let installedRefMs = NaN;
+      if (inst) {
+        if (inst.archiveMtime) installedRefMs = inst.archiveMtime;
+        else if (inst.installedAt) installedRefMs = Date.parse(inst.installedAt);
+      }
+      const newerDownload = !!newest.mtime && !isNaN(installedRefMs) && newest.mtime > installedRefMs + 1000;
       let status = 'new';
-      if (installedVersion !== undefined && newest.parsedVersion && installedVersion) {
+      if (inst !== undefined && newest.parsedVersion && installedVersion) {
         const cmp = this._compareVersions(newest.parsedVersion, installedVersion);
         if (cmp > 0) status = 'update';
-        else if (cmp < 0) status = 'downgrade';
-        else status = 'reinstall';
-      } else if (installedVersion !== undefined) {
-        status = 'reinstall';
+        else if (cmp < 0) status = newerDownload ? 'update' : 'downgrade';
+        // Same version string: a newer archive (re-release or a different variant
+        // like "(HQ Base Game Sprites)") is an update — the file changed even
+        // though the version didn't.
+        else status = newerDownload ? 'update' : 'reinstall';
+      } else if (inst !== undefined) {
+        // Versions can't decide (one or both missing). Use the archive date: a
+        // newer download of the same mod is an update; otherwise a reinstall.
+        status = newerDownload ? 'update' : 'reinstall';
       }
       result.push({
         filename: newest.filename,
@@ -1118,51 +1155,83 @@ class ModManager {
   }
 
   /**
-   * Parse Nexus Mods filename format:
-   * "ModName-ModID-Version-Timestamp.zip"
-   * e.g. "BepInEx with Configuration Manager-2-5-4-23-2-1726589034.zip"
-   *   → name: "BepInEx with Configuration Manager", version: "5.4.23.2"
-   * e.g. "EnhancedPrefabLoader-496-6-0-0-1775691005.zip"
-   *   → name: "EnhancedPrefabLoader", version: "6.0.0"
+   * Parse a mod archive filename into { name, version }, supporting BOTH the
+   * legacy Nexus download format and the newer simplified format.
+   *
+   * OLD format: "ModName-ModID-Version-Timestamp.zip"
+   *   "BepInEx with Configuration Manager-2-5-4-23-2-1726589034.zip"
+   *     → name "BepInEx with Configuration Manager", version "5.4.23.2"
+   *   "EnhancedPrefabLoader-496-6-0-0-1775691005.zip"
+   *     → name "EnhancedPrefabLoader", version "6.0.0"
+   *
+   * NEW format (Nexus dropped the "-modID-version-timestamp" suffix): the file
+   * arrives as the human-readable mod name plus an optional trailing version:
+   *   "Collection Tracker v1.1.6.zip" → name "Collection Tracker", version "1.1.6"
+   *   "Collection Tracker 1.1.6.zip"  → name "Collection Tracker", version "1.1.6"
+   *   "Yu-Gi-Oh Expansions v3.0.zip"  → name "Yu-Gi-Oh Expansions", version "3.0"
+   *   "RTCGO Custom TV.zip"           → name "RTCGO Custom TV",     version ""
+   *
+   * Getting the NAME right matters beyond display: it drives known-DB matching,
+   * core detection, auto-grouping, and same-mod detection on reinstall. A name
+   * left as "Collection Tracker v1.1.6" would fail to match the DB's
+   * "Collection Tracker" and break all of those.
    */
   _parseNexusFilename(filename) {
     const base = filename.replace(/\.(zip|rar|7z)$/i, '');
     const parts = base.split('-');
 
-    // Check if last part is a 10-digit timestamp
+    // Detect the OLD format. Its signature is hyphen-delimited groups ending in
+    // either a 9-10 digit timestamp, or a run (>=2) of numeric-only groups
+    // (modID + version segments). A plain hyphenated display name like
+    // "Yu-Gi-Oh Expansions v3.0" has no such all-numeric tail, so it won't
+    // false-trigger here and falls through to the NEW-format parser below.
     const last = parts[parts.length - 1];
     const hasTimestamp = /^\d{9,10}$/.test(last);
-    if (hasTimestamp) parts.pop();
+    let numericTail = 0;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (/^\d+$/.test(parts[i])) numericTail++; else break;
+    }
+    const looksOld = hasTimestamp || (parts.length >= 3 && numericTail >= 2);
 
-    // Find where name ends: scan from left, name parts contain non-numeric chars
-    let nameEnd = 0;
-    for (let i = 0; i < parts.length; i++) {
-      if (/^\d+$/.test(parts[i])) { nameEnd = i; break; }
-      nameEnd = i + 1;
+    if (looksOld) {
+      const op = parts.slice();
+      if (hasTimestamp) op.pop();
+      // Name = leading non-numeric groups; first numeric = modID; rest = version.
+      let nameEnd = 0;
+      for (let i = 0; i < op.length; i++) {
+        if (/^\d+$/.test(op[i])) { nameEnd = i; break; }
+        nameEnd = i + 1;
+      }
+      const nameParts = op.slice(0, nameEnd);
+      const numericParts = op.slice(nameEnd);
+      let name = nameParts.join(' ') || base;
+      let version = '';
+      if (numericParts.length >= 2) version = numericParts.slice(1).join('.');
+      else if (numericParts.length === 1) version = numericParts[0];
+      name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+      name = name.replace(/\.(zip|rar|7z)$/i, '').trim();
+      if (version) name = name.replace(/\s+v?\d+(\.\d+)*\s*$/i, '').trim();
+      return { name: name || base, version: version || '' };
     }
 
-    const nameParts = parts.slice(0, nameEnd);
-    const numericParts = parts.slice(nameEnd);
+    // NEW format: first peel an optional trailing variant tag in parentheses or
+    // brackets — "(HQ Base Game Sprites)", "[Optional]", "(2k Textures)". These
+    // are Nexus optional-file markers for the SAME mod, so we drop them from the
+    // name: "Collection Tracker v1.1.6 (HQ Base Game Sprites)" must reduce to
+    // "Collection Tracker" so it overwrites the plain "Collection Tracker"
+    // instead of installing alongside it as a phantom second copy.
+    let work = base.replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, '').trim();
 
-    let name = nameParts.join(' ') || base;
+    // Then pull an optional trailing version token off what's left. Require a
+    // dotted number ("1.1.6") OR a 'v' prefix ("v2") so we never strip a
+    // legitimate trailing integer that's part of the name (e.g. "Base Set 2").
+    let name = work;
     let version = '';
-
-    if (numericParts.length >= 2) {
-      // First numeric part is mod ID, rest is version
-      version = numericParts.slice(1).join('.');
-    } else if (numericParts.length === 1) {
-      version = numericParts[0];
-    }
-
-    // Clean up name
+    const m = work.match(/^(.*?)[\s_-]+v?(\d+(?:\.\d+)+)\s*$/i)  // "Name v1.1.6" / "Name 1.1.6"
+           || work.match(/^(.*?)[\s_-]+v(\d+)\s*$/i);            // "Name v2"
+    if (m) { name = m[1]; version = m[2]; }
     name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-    // Strip archive extensions that leaked into the name (e.g. "JeffsCardSeller 26031902.zip")
     name = name.replace(/\.(zip|rar|7z)$/i, '').trim();
-    // Strip trailing version number from name (e.g. "TextureReplacer 1.6.0" → "TextureReplacer")
-    if (version) {
-      name = name.replace(/\s+v?\d+(\.\d+)*\s*$/i, '').trim();
-    }
-
     return { name: name || base, version: version || '' };
   }
 
@@ -1471,6 +1540,11 @@ class ModManager {
     const parsed = this._parseNexusFilename(filename);
     const name = modName || parsed.name;
     const version = parsed.version || '';
+    // Remember the source archive's modified time so a later, newer archive of
+    // the same mod (even with the same/no version) is recognized as an update
+    // rather than a plain reinstall — compares archive-date to archive-date.
+    let archiveMtime = 0;
+    try { archiveMtime = fs.statSync(archivePath).mtimeMs; } catch {}
 
     // Security scan — block dangerous archives before installation
     const peek = await this.peekArchive(filename);
@@ -1635,7 +1709,7 @@ class ModManager {
           let looseDllFiles = rootFiles.map(p => p.replace(/\\/g, '/'));
           looseDllFiles = this._applyExcludeRules(looseDllFiles, this._findKnownModByName(name));
           const loosePrefab = looseDllFiles.some(f => f.toLowerCase().includes('_prefabloader'));
-          const mod = { id, name, version, filename, targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: true };
+          const mod = { id, name, version, filename, targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: true };
           this.mods.set(id, mod);
           this._saveDb();
           this._autoAssignGroupByName(id, name, looseDllFiles);
@@ -1728,7 +1802,7 @@ class ModManager {
     }
 
     const hasPrefabloader = files.some(f => f.toLowerCase().includes('_prefabloader'));
-    const mod = { id, name, version, filename, targetKey, targetLabel: TARGETS[targetKey].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), files, fileCount: files.length };
+    const mod = { id, name, version, filename, targetKey, targetLabel: TARGETS[targetKey].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
     this.mods.set(id, mod);
     this._saveDb();
     this._autoAssignGroupByName(id, name, files);
@@ -2052,9 +2126,22 @@ class ModManager {
     return files;
   }
 
-  async uninstallMod(modId) {
+  async uninstallMod(modId, onProgress) {
     const mod = this.mods.get(modId);
     if (!mod) throw new Error(`Mod not found: ${modId}`);
+
+    // Progress reporting (see toggleMod) — large mods take a moment to delete
+    // every file, so emit (done, total) to drive a progress bar.
+    const _total = Array.isArray(mod.files) ? mod.files.length : 0;
+    let _done = 0;
+    const _step = Math.max(1, Math.ceil(_total / 100));
+    const tick = () => {
+      _done++;
+      if (onProgress && (_done % _step === 0 || _done >= _total)) {
+        try { onProgress(_done, _total); } catch {}
+      }
+    };
+    if (onProgress && _total > 0) { try { onProgress(0, _total); } catch {} }
 
     // Fix imported mods that were saved with wrong targetKey/extractTo
     // Imported mod files are always relative to gamePath
@@ -2079,6 +2166,7 @@ class ModManager {
     if (isScatter) {
       const base = mod.targetKey === 'game_root' ? this.gamePath : path.join(this.gamePath, 'BepInEx');
       for (const f of mod.files) {
+        tick();
         if (!f || f === '.' || f === '/') continue;
         // Never delete config files
         if (mod.targetKey === 'bepinex' && (f.toLowerCase().startsWith('config' + path.sep) || f.toLowerCase().startsWith('config/'))) continue;
@@ -2102,6 +2190,7 @@ class ModManager {
       if (mod.looseDlls) {
         // Loose DLL mod — delete individual files, not the folder
         for (const f of mod.files) {
+          tick();
           if (claimedByOthers.has(this._canonicalFileKey(mod, f))) continue;
           const full = path.join(mod.extractTo, f);
           if (fs.existsSync(full) && fs.statSync(full).isFile()) await fs.remove(full);
@@ -2109,6 +2198,7 @@ class ModManager {
       } else if (mod.files && mod.files.length > 0) {
         // Delete only the files this mod installed, not the entire folder
         for (const f of mod.files) {
+          tick();
           if (claimedByOthers.has(this._canonicalFileKey(mod, f))) continue;
           const full = path.join(mod.extractTo, f);
           if (fs.existsSync(full) && fs.statSync(full).isFile()) await fs.remove(full);
@@ -2146,10 +2236,26 @@ class ModManager {
     return { success: true };
   }
 
-  async toggleMod(modId) {
+  async toggleMod(modId, onProgress) {
     const mod = this.mods.get(modId);
     if (!mod) throw new Error(`Mod not found: ${modId}`);
     if (mod.core) throw new Error(`"${mod.name}" is a core mod and cannot be disabled.`);
+
+    // Progress reporting: large mods (e.g. Pokemon Expansions ~906 files) take a
+    // noticeable moment to move every file. Emit (done, total) so the UI can show
+    // a progress bar instead of looking frozen. `tick()` is called once per file
+    // considered (moved OR skipped) so the bar always reaches 100%. Throttled to
+    // ~100 updates max to avoid flooding IPC on big mods.
+    const _total = Array.isArray(mod.files) ? mod.files.length : 0;
+    let _done = 0;
+    const _step = Math.max(1, Math.ceil(_total / 100));
+    const tick = () => {
+      _done++;
+      if (onProgress && (_done % _step === 0 || _done >= _total)) {
+        try { onProgress(_done, _total); } catch {}
+      }
+    };
+    if (onProgress && _total > 0) { try { onProgress(0, _total); } catch {} }
 
     // Fix imported mods that were saved with wrong targetKey/extractTo
     if (mod.imported) {
@@ -2193,6 +2299,7 @@ class ModManager {
         const claimedByOthers = this._filesClaimedByOtherMods(modId);
         fs.ensureDirSync(disabledDir);
         for (const relFile of mod.files) {
+          tick();
           if (!relFile || relFile === '.' || relFile === '/') continue;
           if (claimedByOthers.has(this._canonicalFileKey(mod, relFile))) continue;
           const src = resolveSrc(relFile);
@@ -2222,6 +2329,7 @@ class ModManager {
           throw new Error(`Disabled files for "${mod.name}" not found. Try reinstalling the mod.`);
         }
         for (const relFile of mod.files) {
+          tick();
           if (!relFile || relFile === '.' || relFile === '/') continue;
           const src = resolveDest(disabledDir, relFile);
           if (!fs.existsSync(src) || !fs.statSync(src).isFile()) continue;
@@ -2238,6 +2346,7 @@ class ModManager {
         const claimedByOthers = this._filesClaimedByOtherMods(modId);
         fs.ensureDirSync(disabledDir);
         for (const f of mod.files) {
+          tick();
           if (claimedByOthers.has(this._canonicalFileKey(mod, f))) continue;
           const src = path.join(mod.extractTo, f);
           if (!fs.existsSync(src) || !fs.statSync(src).isFile()) continue;
@@ -2255,6 +2364,7 @@ class ModManager {
           throw new Error(`Disabled files for "${mod.name}" not found. Try reinstalling the mod.`);
         }
         for (const f of mod.files) {
+          tick();
           const src = path.join(disabledDir, f);
           if (!fs.existsSync(src) || !fs.statSync(src).isFile()) continue;
           const dest = path.join(mod.extractTo, f);
@@ -2271,6 +2381,7 @@ class ModManager {
         const claimedByOthers = this._filesClaimedByOtherMods(modId);
         fs.ensureDirSync(disabledDir);
         for (const f of mod.files) {
+          tick();
           if (claimedByOthers.has(this._canonicalFileKey(mod, f))) continue;
           const src = path.join(mod.extractTo, f);
           if (!fs.existsSync(src) || !fs.statSync(src).isFile()) continue;
@@ -2291,6 +2402,7 @@ class ModManager {
         }
         fs.ensureDirSync(mod.extractTo);
         for (const f of mod.files) {
+          tick();
           const src = path.join(disabledDir, f);
           if (!fs.existsSync(src) || !fs.statSync(src).isFile()) continue;
           const dest = path.join(mod.extractTo, f);
@@ -2332,11 +2444,26 @@ class ModManager {
     const p = { id: `profile_${Date.now()}`, name, createdAt: new Date().toISOString(), mods: Array.from(this.mods.values()).map(m => ({ id: m.id, enabled: m.enabled })) };
     profiles.push(p); store.set('profiles', profiles); return p;
   }
-  async activateProfile(profileId) {
+  async activateProfile(profileId, onProgress) {
     const profile = this.getProfiles().find(p => p.id === profileId);
     if (!profile) throw new Error('Profile not found');
     const states = new Map(profile.mods.map(m => [m.id, m.enabled]));
-    for (const [id, mod] of this.mods) { const s = states.get(id); if (s !== undefined && mod.enabled !== s) await this.toggleMod(id); }
+    // Determine which mods actually need to flip, so progress reflects real work.
+    const toFlip = [];
+    for (const [id, mod] of this.mods) {
+      const s = states.get(id);
+      if (s !== undefined && mod.enabled !== s) toFlip.push(id);
+    }
+    let i = 0;
+    for (const id of toFlip) {
+      i++;
+      const mod = this.mods.get(id);
+      if (onProgress) { try { onProgress({ current: i, total: toFlip.length, modName: mod ? mod.name : '', modId: id }); } catch {} }
+      // Forward each mod's file-move progress too (same shape toggleMod emits).
+      await this.toggleMod(id, (done, fileTotal) => {
+        if (onProgress) { try { onProgress({ current: i, total: toFlip.length, modName: mod ? mod.name : '', modId: id, fileDone: done, fileTotal }); } catch {} }
+      });
+    }
     store.set('activeProfileId', profileId);
     return profile;
   }

@@ -31,6 +31,8 @@ function AppInner() {
   const [themeId, setThemeId] = useState('midnight');
   const [installing, setInstalling] = useState(null);
   const [installProgress, setInstallProgress] = useState(null);
+  const [togglingId, setTogglingId] = useState(null);
+  const [toggleProgress, setToggleProgress] = useState(null);
 
   const changeTheme = (id) => { setThemeId(id); applyTheme(id); window.api.setTheme(id); };
 
@@ -55,6 +57,11 @@ function AppInner() {
   }, [loading]);
   useEffect(() => { window.api.onStagingChanged(files => setStaged(files)); }, []);
   useEffect(() => { window.api.onInstallProgress(data => setInstallProgress(data)); }, []);
+  useEffect(() => {
+    if (!window.api.onToggleProgress) return;
+    const off = window.api.onToggleProgress(data => setToggleProgress(data));
+    return off;
+  }, []);
 
   // Grab-to-scroll: click and drag on non-interactive areas to scroll
   useEffect(() => {
@@ -111,7 +118,19 @@ function AppInner() {
     else if (r.blocked) { notify(`🛑 ${r.error}`, 'error'); }
     else notify(r.error, 'error');
   };
-  const handleToggle = async id => { const r = await window.api.toggleMod(id); if (r.success) { notify(`${r.mod.name} ${r.mod.enabled?t('Enabled'):t('Disabled')}`, r.mod.enabled?'success':'warn'); await refreshMods(); } else notify(r.error,'error'); };
+  const handleToggle = async id => {
+    if (togglingId) return; // ignore clicks while a toggle is in flight
+    setTogglingId(id);
+    setToggleProgress({ id, done: 0, total: 0 });
+    try {
+      const r = await window.api.toggleMod(id);
+      if (r.success) { notify(`${r.mod.name} ${r.mod.enabled?t('Enabled'):t('Disabled')}`, r.mod.enabled?'success':'warn'); await refreshMods(); }
+      else notify(r.error,'error');
+    } finally {
+      setTogglingId(null);
+      setToggleProgress(null);
+    }
+  };
   const [pendingRemove, setPendingRemove] = useState(null);
   // Session-scoped flag: when user ticks "Ignore warning for the rest of this
   // session" on a prefab-mod removal confirmation, skip the warning modal for
@@ -131,10 +150,17 @@ function AppInner() {
   };
   const doRemove = async id => {
     const mod = mods.find(m => m.id === id);
-    const r = await window.api.uninstallMod(id);
-    if (r.success) { notify(`${t('Remove')}: "${mod?.name}"`, 'warn'); await refreshMods(); await refreshStaged(); setBepinex(await window.api.getBepInExStatus()); }
-    else notify(r.error, 'error');
-    setPendingRemove(null);
+    setTogglingId(id);
+    setToggleProgress({ id, done: 0, total: 0 });
+    try {
+      const r = await window.api.uninstallMod(id);
+      if (r.success) { notify(`${t('Remove')}: "${mod?.name}"`, 'warn'); await refreshMods(); await refreshStaged(); setBepinex(await window.api.getBepInExStatus()); }
+      else notify(r.error, 'error');
+    } finally {
+      setTogglingId(null);
+      setToggleProgress(null);
+      setPendingRemove(null);
+    }
   };
   const handleMarkCore = async (id, isCore, opts) => {
     // Bulk path: InstalledMods already called markCoreBulk and is telling us
@@ -226,7 +252,7 @@ function AppInner() {
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-surface)'}}>
           {view==='suggested'&&<SuggestedMods/>}
           {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore}/>}
+          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
           {view==='profiles'&&<ProfileManager notify={notify} onRefresh={refreshMods}/>}
           {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
