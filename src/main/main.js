@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 // Single instance check — do this BEFORE loading anything else
 // Second instance exits immediately without loading modules
@@ -33,8 +34,26 @@ let tray = null;
 let isQuitting = false;
 
 function getPortablePath() {
+  // Windows portable build: electron-builder sets this to the folder the .exe
+  // was launched from.
   if (process.env.PORTABLE_EXECUTABLE_DIR) {
     return process.env.PORTABLE_EXECUTABLE_DIR;
+  }
+  // Linux AppImage: process.execPath points INSIDE the read-only squashfs mount
+  // (/tmp/.mount_XXXXXX/usr/bin/...), which is recreated with a different random
+  // name on every launch — useless for storing staging/ and disabled-mods/.
+  // AppImage exports APPIMAGE with the real path of the .AppImage file, so use
+  // the folder it lives in. That mirrors the Windows portable behaviour: your
+  // staging folder sits next to the app you launched.
+  if (process.env.APPIMAGE) {
+    const dir = path.dirname(process.env.APPIMAGE);
+    try {
+      fs.accessSync(dir, fs.constants.W_OK);
+      return dir;
+    } catch {
+      // AppImage stored somewhere read-only — fall through to userData below.
+      return app.getPath('userData');
+    }
   }
   return app.isPackaged ? path.dirname(process.execPath) : process.cwd();
 }

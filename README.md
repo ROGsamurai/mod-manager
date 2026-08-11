@@ -188,6 +188,26 @@ workflow exists.
 
 - The AppImage runs in **Desktop Mode**. Mark it executable once
   (right-click → Properties → Permissions → *Is executable*, or `chmod +x`), then run it.
+
+### Where it keeps its files
+
+The AppImage is portable, exactly like the Windows build: it creates its folders
+**next to the `.AppImage` file itself**, so put the AppImage somewhere permanent
+(e.g. `~/Applications/` or the Desktop) rather than in Downloads.
+
+```
+~/Applications/
+├── Real-TCG-Overhaul-Mod-Manager-1.1.1.AppImage
+├── staging/          <- drop mod archives here (or use "+ Add Archives")
+└── disabled-mods/    <- files from mods you have toggled off
+```
+
+Settings tracking (installed mods, profiles, groups) lives in
+`~/.config/Real TCG Overhaul Mod Manager/`.
+
+If the AppImage is somewhere read-only, it falls back to keeping `staging/` and
+`disabled-mods/` in that same config folder. You can always jump to the right
+place from inside the app — the staging folder has an *Open Folder* button.
 - The game runs through **Proton**, so the Play button hands off to Steam
   (`steam://rungameid/...`) instead of running the Windows `.exe` directly.
 - Auto-detection covers the standard Steam path, Flatpak Steam, and microSD cards.
