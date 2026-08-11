@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
-export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onMarkCore, togglingId, toggleProgress }) {
+export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
   const { t, tMod } = useI18n();
   const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState('All');
@@ -15,6 +15,8 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
   const [showCreate, setShowCreate] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [editName, setEditName] = useState('');
+  const [editingModId, setEditingModId] = useState(null);
+  const [modEditName, setModEditName] = useState('');
   const [selected, setSelected] = useState(new Set());
   const [dragGroupId, setDragGroupId] = useState(null);
   const [dragOverGroupId, setDragOverGroupId] = useState(null);
@@ -24,6 +26,25 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
   useEffect(() => { window.api.getCollapsedGroups().then(ids => setCollapsed(new Set(ids || []))).catch(e => console.error('[getCollapsedGroups]', e)); }, []);
 
   const conflictIds = useMemo(() => { const s = new Set(); conflicts.forEach(c => c.mods.forEach(m => s.add(m.modId))); return s; }, [conflicts]);
+  // Per-mod conflict detail: which other mods it collides with, and over which
+  // file(s). Lets each row explain the conflict instead of showing a bare ⚡.
+  const conflictMap = useMemo(() => {
+    const m = {};
+    conflicts.forEach(c => {
+      const fileName = String(c.file || '').split('/').pop();
+      c.mods.forEach(entry => {
+        const others = c.mods.filter(x => x.modId !== entry.modId).map(x => x.modName);
+        if (!others.length) return;
+        if (!m[entry.modId]) m[entry.modId] = { others: new Set(), files: new Set() };
+        others.forEach(o => m[entry.modId].others.add(o));
+        if (fileName) m[entry.modId].files.add(fileName);
+      });
+    });
+    // Freeze to plain arrays for rendering
+    const out = {};
+    for (const id of Object.keys(m)) out[id] = { others: [...m[id].others], files: [...m[id].files] };
+    return out;
+  }, [conflicts]);
   const depMap = useMemo(() => { const m = {}; depWarnings.forEach(w => { if (!m[w.modId]) m[w.modId] = []; m[w.modId].push(w.missingDep); }); return m; }, [depWarnings]);
   const uniqueTargets = useMemo(() => ['All', ...new Set(mods.map(m => m.targetLabel).filter(Boolean))], [mods]);
 
@@ -105,6 +126,14 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
     setEditingGroup(null); setEditName('');
     setGroups(await window.api.getModGroups());
   };
+  const startModRename = (mod) => { setEditingModId(mod.id); setModEditName(tMod(mod.name, '').name || mod.name); };
+  const cancelModRename = () => { setEditingModId(null); setModEditName(''); };
+  const saveModRename = async (id) => {
+    const trimmed = modEditName.trim();
+    if (!trimmed) { cancelModRename(); return; }
+    await onRename(id, trimmed);
+    setEditingModId(null); setModEditName('');
+  };
   const moveToGroup = async (modId, groupId) => {
     await window.api.setModGroup(modId, groupId || null);
     setGroups(await window.api.getModGroups());
@@ -135,12 +164,18 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
   };
 
   const rowProps = (m, i) => ({
-    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), missingDeps: depMap[m.id],
+    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id],
     onToggle: () => onToggle(m.id), onRemove: () => onRemove(m.id), onMarkCore: c => onMarkCore(m.id, c),
     selected: selected.has(m.id), onSelect: () => toggleSelect(m.id), t, tMod,
     busy: togglingId === m.id,
     progress: (toggleProgress && toggleProgress.id === m.id) ? toggleProgress : null,
     anyToggling: !!togglingId,
+    isEditingName: editingModId === m.id,
+    modEditName,
+    onNameEditStart: () => startModRename(m),
+    onNameEditChange: setModEditName,
+    onNameEditSave: () => saveModRename(m.id),
+    onNameEditCancel: cancelModRename,
   });
 
   return (
@@ -196,7 +231,7 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
         <div style={{ width: 90, cursor: 'pointer' }} onClick={() => doSort('version')}>{t('VERSION')}{arrow('version')}</div>
         <div style={{ width: 155 }}>{t('TARGET')}</div>
         <div style={{ width: 60, textAlign: 'center' }}>{t('FILES')}</div>
-        <div style={{ width: 60, textAlign: 'center' }}>{t('DEPS')}</div>
+        <div style={{ width: 60, textAlign: 'center', cursor: 'help' }} title={t('Warnings: missing dependencies (⚠️) or file conflicts with another mod (⚡). Hover the icon for details.')}>{t('ISSUES')}</div>
         <div style={{ width: 100, textAlign: 'center' }}>{t('ACTIONS')}</div>
       </div>
 
@@ -291,13 +326,21 @@ function FL({ label, children, style }) {
   </div>;
 }
 
-function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling }) {
+function Row({ mod, i, conflict, conflictInfo, missingDeps, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
   const [h, setH] = useState(false);
   const isCore = mod.core;
   const isPrefab = isCore && mod.files?.some(f => f.toLowerCase().includes('_prefabloader'));
   const isRoot = mod.targetKey === 'game_root' || mod.targetKey === 'bepinex';
   const translatedName = tMod(mod.name, '').name;
   const hasDeps = missingDeps && missingDeps.length > 0;
+  const hasConflict = conflict && conflictInfo && conflictInfo.others && conflictInfo.others.length > 0;
+  // Human-readable conflict description used in both the tooltip and the inline line.
+  const conflictText = hasConflict
+    ? `${t('Conflicts with')} ${conflictInfo.others.join(', ')}`
+      + (conflictInfo.files && conflictInfo.files.length
+          ? ` — ${t('shared file')}: ${conflictInfo.files.slice(0, 3).join(', ')}${conflictInfo.files.length > 3 ? '…' : ''}`
+          : '')
+    : '';
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
       style={{ display: 'flex', padding: '8px 16px', alignItems: 'center', borderBottom: '1px solid var(--border)', transition: 'background .1s', fontSize: 15, position: 'relative',
@@ -322,10 +365,33 @@ function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, se
         )}
       </div>
       <div style={{ flex: 2, fontWeight: 500, color: 'var(--text)', minWidth: 0 }}>
-        {translatedName}
+        {isEditingName ? (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input className="input" value={modEditName} autoFocus
+              onChange={e => onNameEditChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') onNameEditSave(); if (e.key === 'Escape') onNameEditCancel(); }}
+              onBlur={onNameEditSave}
+              style={{ flex: 1, padding: '2px 8px', fontSize: 14, minWidth: 0 }} />
+            <button className="btn btn-accent btn-sm" onMouseDown={e => e.preventDefault()} onClick={onNameEditSave} style={{ padding: '2px 8px' }}>✓</button>
+            <button className="btn btn-ghost btn-sm" onMouseDown={e => e.preventDefault()} onClick={onNameEditCancel} style={{ padding: '2px 8px' }}>✕</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{translatedName}</span>
+            {!anyToggling && h && (
+              <button className="btn btn-ghost btn-sm" onClick={onNameEditStart} title={t('Rename')}
+                style={{ padding: '1px 5px', fontSize: 11, flexShrink: 0, opacity: .8 }}>✏️</button>
+            )}
+          </div>
+        )}
         {hasDeps && (
           <div style={{ fontSize: 11, color: 'var(--red-bright)', marginTop: 2 }}>
             ⚠️ {t('Missing')}: {missingDeps.join(', ')}
+          </div>
+        )}
+        {hasConflict && (
+          <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={conflictText}>
+            ⚡ {conflictText}
           </div>
         )}
       </div>
@@ -333,8 +399,8 @@ function Row({ mod, i, conflict, missingDeps, onToggle, onRemove, onMarkCore, se
       <div style={{ width: 155 }}><span style={{ fontSize: 13, padding: '3px 8px', borderRadius: 'var(--radius)', background: isRoot ? 'rgba(218,155,60,.15)' : 'rgba(92,185,80,.12)', color: isRoot ? 'var(--accent)' : 'var(--green-bright)' }}>{mod.targetLabel}</span></div>
       <div style={{ width: 60, textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>{mod.fileCount || '—'}</div>
       <div style={{ width: 60, textAlign: 'center' }}>
-        {hasDeps ? <span title={missingDeps.join(', ')} style={{ color: 'var(--red-bright)', fontSize: 16 }}>⚠️</span> :
-         conflict ? <span style={{ color: 'var(--accent)', fontSize: 18, animation: 'pulse 2s infinite' }}>⚡</span> :
+        {hasDeps ? <span title={`${t('Missing')}: ${missingDeps.join(', ')}`} style={{ color: 'var(--red-bright)', fontSize: 16, cursor: 'help' }}>⚠️</span> :
+         hasConflict ? <span title={conflictText} style={{ color: 'var(--accent)', fontSize: 18, animation: 'pulse 2s infinite', cursor: 'help' }}>⚡</span> :
          <span style={{ color: 'var(--text-4)' }}>—</span>}
       </div>
       <div style={{ width: 100, display: 'flex', gap: 5, justifyContent: 'center' }}>

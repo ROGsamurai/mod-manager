@@ -129,3 +129,75 @@ Copyright © 2026 iiTzSamurai. All Rights Reserved. See [LICENSE](./LICENSE).
 
 - Discord: https://discord.gg/NHSvm22TSh
 - Nexus Mods: Report bugs on the mod page
+
+---
+
+## Building from source (GitHub Actions)
+
+Builds are produced automatically by GitHub Actions:
+
+- **Windows** — portable `.exe` (no install)
+- **Linux / Steam Deck** — `.AppImage` (no install)
+
+### Getting the builds
+
+Every push to `main` builds both. Open the **Actions** tab → click the newest run →
+download **`linux-appimage`** or **`windows-portable`** from the *Artifacts* section.
+You can also start one by hand: **Actions → Build → Run workflow**.
+
+Pushing a version tag attaches both builds to a draft GitHub Release:
+
+```bash
+git tag v1.1.1
+git push origin v1.1.1
+```
+
+### First-time repository setup
+
+Create a new **empty** repository on GitHub (no README, no .gitignore), then:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/<your-user>/<your-repo>.git
+git push -u origin main
+```
+
+Open the **Actions** tab — the first build starts on its own.
+
+`package-lock.json` **must** stay committed. The workflow uses `npm ci`, which
+requires it, and it pins the build toolchain to the versions known to produce a
+clean portable stub.
+
+### Building locally
+
+```bash
+npm install
+npm run build:win      # Windows portable .exe  ->  build/
+npm run build:linux    # Linux AppImage         ->  build/
+```
+
+Linux targets must be built on Linux (or WSL/Docker) — which is why the GitHub
+workflow exists.
+
+---
+
+## Steam Deck / Linux notes
+
+- The AppImage runs in **Desktop Mode**. Mark it executable once
+  (right-click → Properties → Permissions → *Is executable*, or `chmod +x`), then run it.
+- The game runs through **Proton**, so the Play button hands off to Steam
+  (`steam://rungameid/...`) instead of running the Windows `.exe` directly.
+- Auto-detection covers the standard Steam path, Flatpak Steam, and microSD cards.
+  If it can't find the game, use **Browse** and pick the folder containing
+  `Card Shop Simulator.exe`.
+- **BepInEx needs a Steam launch option under Proton.** Right-click the game in
+  Steam → Properties → General → Launch Options:
+
+  ```
+  WINEDLLOVERRIDES="winhttp=n,b" %command%
+  ```
+
+  Without it, mods install correctly but never load.

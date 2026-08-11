@@ -132,6 +132,11 @@ function AppInner() {
     }
   };
   const [pendingRemove, setPendingRemove] = useState(null);
+  const handleRename = async (id, name) => {
+    const r = await window.api.renameMod(id, name);
+    if (r.success) { notify(`${t('Rename')}: "${r.mod.name}"`, 'success'); await refreshMods(); }
+    else notify(r.error, 'error');
+  };
   // Session-scoped flag: when user ticks "Ignore warning for the rest of this
   // session" on a prefab-mod removal confirmation, skip the warning modal for
   // every subsequent prefab removal. Resets to false on next app launch because
@@ -183,11 +188,10 @@ function AppInner() {
       await refreshStaged();
     }
   };
-  const handleLaunch = () => {
-    window.api.launchGame();
-    const isXbox = gamePath && (gamePath.toLowerCase().includes('xboxgames') || gamePath.toLowerCase().includes('windowsapps'));
-    notify(isXbox ? t('Launching game...') : t('Launching via Steam...'), 'info');
-  };
+  const handleLaunch = async () => {
+    const r = await window.api.launchGame();
+    if (r && r.success === false) { notify(r.error || t('Could not launch the game'), 'error'); return; }
+    notify((r && r.method === 'steam') ? t('Launching via Steam...') : t('Launching game...'), 'info');  };
 
   if (loading) return (
     <div style={{height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:14}}>
@@ -252,13 +256,13 @@ function AppInner() {
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-surface)'}}>
           {view==='suggested'&&<SuggestedMods/>}
           {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} togglingId={togglingId} toggleProgress={toggleProgress}/>}
+          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
           {view==='profiles'&&<ProfileManager notify={notify} onRefresh={refreshMods}/>}
           {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
             notify={notify} onRefreshMods={refreshMods} onRefreshStaged={refreshStaged}
             onSetBepinex={async()=>setBepinex(await window.api.getBepInExStatus())}
-            onSetPath={async()=>{const p=await window.api.openFolderDialog();if(p){await window.api.setGamePath(p);setGamePath(p);setBepinex(await window.api.getBepInExStatus());notify('Game path set','success');}}}
+            onSetPath={async()=>{const p=await window.api.openFolderDialog();if(p){const r=await window.api.setGamePath(p);const finalPath=(r&&r.path)||p;setGamePath(finalPath);setBepinex(await window.api.getBepInExStatus());notify(r&&r.adjusted?t('Game path set to the Content folder (where mods must go)'):t('Game path set'),'success');}}}
             onDetect={async()=>{const p=await window.api.detectGame();if(p){setGamePath(p);setBepinex(await window.api.getBepInExStatus());notify('Game found!','success');}else notify('Could not auto-detect.','error');}}/>}
         </main>
       </div>

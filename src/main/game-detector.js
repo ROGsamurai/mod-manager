@@ -36,14 +36,41 @@ class GameDetector {
   // ─── Steam Detection ───
 
   async _findSteam() {
-    if (os.platform() !== 'win32') return null;
-    return new Promise(res => {
-      exec('reg query "HKCU\\Software\\Valve\\Steam" /v SteamPath', (e, o) => {
-        if (e) return res(null);
-        const m = o.match(/SteamPath\s+REG_SZ\s+(.+)/i);
-        res(m ? m[1].trim() : null);
+    if (os.platform() === 'win32') {
+      return new Promise(res => {
+        exec('reg query "HKCU\\Software\\Valve\\Steam" /v SteamPath', (e, o) => {
+          if (e) return res(null);
+          const m = o.match(/SteamPath\s+REG_SZ\s+(.+)/i);
+          res(m ? m[1].trim() : null);
+        });
       });
-    });
+    }
+    // Linux (incl. Steam Deck) / macOS: Steam has no registry, but its root is
+    // in a small set of well-known places. Return the first that exists —
+    // _findInSteam() then reads steamapps/ and libraryfolders.vdf from it, which
+    // is already platform-agnostic.
+    for (const root of this._steamRootsUnix()) {
+      try { if (fs.existsSync(path.join(root, 'steamapps'))) return root; } catch {}
+    }
+    return null;
+  }
+
+  /**
+   * Candidate Steam roots on Linux/macOS, including Steam Deck layouts.
+   * Ordered most-likely-first.
+   */
+  _steamRootsUnix() {
+    const home = os.homedir();
+    if (os.platform() === 'darwin') {
+      return [path.join(home, 'Library/Application Support/Steam')];
+    }
+    return [
+      path.join(home, '.local/share/Steam'),          // default on Linux + Steam Deck
+      path.join(home, '.steam/steam'),                // classic symlink
+      path.join(home, '.steam/root'),
+      path.join(home, '.var/app/com.valvesoftware.Steam/.local/share/Steam'), // Flatpak Steam
+      path.join(home, '.local/share/steam'),          // case variations seen in the wild
+    ];
   }
 
   async _findInSteam(steam) {
@@ -62,7 +89,32 @@ class GameDetector {
   }
 
   _defaultsSteam() {
-    if (os.platform() !== 'win32') return [];
+    if (os.platform() !== 'win32') {
+      const l = [];
+      // Steam roots (incl. Flatpak) …
+      for (const root of this._steamRootsUnix()) {
+        l.push(path.join(root, 'steamapps', 'common', GAME_FOLDER));
+      }
+      // … plus Steam Deck removable media: the microSD card and any other
+      // mounted drive Steam has been pointed at.
+      for (const media of ['/run/media', path.join(os.homedir(), '.local/share/Steam/steamapps')]) {
+        try {
+          if (!fs.existsSync(media)) continue;
+          for (const entry of fs.readdirSync(media, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const base = path.join(media, entry.name);
+            l.push(path.join(base, 'steamapps', 'common', GAME_FOLDER));
+            // /run/media/deck/<label>/ nests one level deeper
+            try {
+              for (const sub of fs.readdirSync(base, { withFileTypes: true })) {
+                if (sub.isDirectory()) l.push(path.join(base, sub.name, 'steamapps', 'common', GAME_FOLDER));
+              }
+            } catch {}
+          }
+        } catch {}
+      }
+      return l;
+    }
     const l = [];
     for (const d of ['C','D','E','F','G']) {
       l.push(`${d}:\\Program Files (x86)\\Steam\\steamapps\\common\\${GAME_FOLDER}`,
@@ -131,27 +183,101 @@ class GameDetector {
 
   // ─── Launch ───
 
+  /**
+   * Build an ordered list of things we could launch for a given game folder.
+   *
+   * Xbox Game Pass installs are laid out as:
+   *   <install root>\gamelaunchhelper.exe
+   *   <install root>\Content\Card Shop Simulator.exe
+   * so the user may have pointed us at EITHER the install root or Content.
+   * Steam/manual installs just have the exe directly in the folder. Checking only
+   * "<gamePath>\<exe>" meant a Game Pass user who set the install root got no
+   * match and fell through to the Steam launcher — the reported bug.
+   */
+  _resolveLaunchCandidates(gamePath) {
+    const out = [];
+    const seen = new Set();
+    const add = (p, kind) => {
+      if (!p) return;
+      const key = p.toLowerCase();
+      if (seen.has(key)) return;
+      try { if (!fs.existsSync(p) || !fs.statSync(p).isFile()) return; } catch { return; }
+      seen.add(key);
+      out.push({ exe: p, cwd: path.dirname(p), kind });
+    };
+
+    const parent = path.dirname(gamePath);
+
+    // 1. The exe exactly where the user pointed us.
+    add(path.join(gamePath, GAME_EXE), 'exe');
+    // 2. Game Pass: the exe lives under Content\.
+    add(path.join(gamePath, 'Content', GAME_EXE), 'exe');
+    // 3. User pointed at Content\ — nothing more to find there, but check siblings.
+    add(path.join(parent, GAME_EXE), 'exe');
+    // 4. Any other single-level subfolder holding the exe (unusual layouts).
+    try {
+      for (const e of fs.readdirSync(gamePath, { withFileTypes: true })) {
+        if (e.isDirectory()) add(path.join(gamePath, e.name, GAME_EXE), 'exe');
+      }
+    } catch {}
+    // 5. Game Pass launch helper — the supported way to start a Game Pass title
+    //    when running the exe directly is refused by licensing. It starts the
+    //    real exe from Content\, so BepInEx's proxy DLL still loads.
+    add(path.join(gamePath, 'gamelaunchhelper.exe'), 'gamepass');
+    add(path.join(parent, 'gamelaunchhelper.exe'), 'gamepass');
+
+    return out;
+  }
+
   launchGame(gamePath) {
     const { shell } = require('electron');
-    const isXbox = gamePath && (
-      gamePath.toLowerCase().includes('xboxgames') ||
-      gamePath.toLowerCase().includes('windowsapps')
-    );
+    const launchSteam = () => { shell.openExternal(`steam://rungameid/${STEAM_APP_ID}`); };
 
-    if (isXbox) {
-      // Xbox Game Pass — launch the exe directly
-      const exePath = path.join(gamePath, GAME_EXE);
-      if (fs.existsSync(exePath)) {
-        const { execFile } = require('child_process');
-        execFile(exePath, { cwd: gamePath }, () => {});
-      } else {
-        // Fallback: try Steam anyway
-        shell.openExternal(`steam://rungameid/${STEAM_APP_ID}`);
-      }
-    } else {
-      // Steam — use Steam protocol
-      shell.openExternal(`steam://rungameid/${STEAM_APP_ID}`);
+    if (!gamePath) { launchSteam(); return { success: true, method: 'steam' }; }
+
+    // Decide by whether this is a STEAM install, not by guessing "is it Xbox".
+    // Steam games always live under "steamapps\common" — a reliable signal.
+    // Everything else (Game Pass in ANY folder, or a manual copy) launches the
+    // real executable from the folder the user set.
+    const isSteam = /(^|[\\/])steamapps[\\/]/i.test(gamePath);
+    if (isSteam) { launchSteam(); return { success: true, method: 'steam' }; }
+
+    // On Linux/macOS the game is a WINDOWS executable running under Proton/Wine.
+    // Spawning "Card Shop Simulator.exe" directly would either do nothing or
+    // start it outside the Proton prefix (no BepInEx, no saves). Steam has to
+    // launch it, so always use the steam:// protocol there. Xbox Game Pass does
+    // not exist on these platforms, so nothing is lost.
+    if (os.platform() !== 'win32') {
+      launchSteam();
+      return { success: true, method: 'steam', proton: true };
     }
+
+    const candidates = this._resolveLaunchCandidates(gamePath);
+    if (candidates.length === 0) {
+      // Nothing runnable found — fall back so the button still does something.
+      launchSteam();
+      return { success: true, method: 'steam', exeMissing: true };
+    }
+
+    // Spawn candidates in order; a spawn error (e.g. EACCES on a licensing-locked
+    // Game Pass exe) is asynchronous, so failures roll on to the next candidate
+    // and only reach the Steam fallback once everything has been tried.
+    const { spawn } = require('child_process');
+    const tryAt = (i) => {
+      if (i >= candidates.length) { launchSteam(); return; }
+      const { exe, cwd } = candidates[i];
+      try {
+        // detached + unref so the game keeps running if the manager is closed.
+        const child = spawn(exe, [], { cwd, detached: true, stdio: 'ignore' });
+        child.on('error', () => tryAt(i + 1));
+        child.unref();
+      } catch {
+        tryAt(i + 1);
+      }
+    };
+    tryAt(0);
+
+    return { success: true, method: candidates[0].kind === 'gamepass' ? 'gamepass' : 'exe', exePath: candidates[0].exe };
   }
 }
 

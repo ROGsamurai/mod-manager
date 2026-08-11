@@ -1,6 +1,14 @@
 node_modules/
 dist/
 build/
-*.exe
+*.log
 .env
-package-lock.json
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# NOTE: package-lock.json is intentionally COMMITTED.
+# The CI build uses `npm ci`, which requires it, and it pins electron-builder
+# to the version that produces a clean portable stub (newer versions have
+# tripped antivirus false positives). Do not add it here.

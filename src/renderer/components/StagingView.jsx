@@ -12,6 +12,9 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   const [peek, setPeek] = useState(null);
   const [preview, setPreview] = useState(null);
   const [securityMap, setSecurityMap] = useState({});
+  // Filenames currently being deleted — hidden from the list immediately so the
+  // ✕ click feels instant instead of waiting for the disk + refresh round trip.
+  const [removing, setRemoving] = useState(new Set());
 
   const VERIFIED_PATTERNS = ['fast pack opening','fast opening pack','fastpackopening',
     'rtcgo custom furniture','custom furniture','furniture_prefabloader',
@@ -103,11 +106,13 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   // so they deserve to be at the top. Stable sort preserves the manager's natural order
   // (filesystem / arrival) within each status group.
   const statusRank = { update: 0, new: 1, reinstall: 2 };
-  const stagedSorted = [...staged].sort((a, b) => {
-    const ra = statusRank[a.status] ?? 3;
-    const rb = statusRank[b.status] ?? 3;
-    return ra - rb;
-  });
+  const stagedSorted = staged
+    .filter(f => !removing.has(f.filename))
+    .sort((a, b) => {
+      const ra = statusRank[a.status] ?? 3;
+      const rb = statusRank[b.status] ?? 3;
+      return ra - rb;
+    });
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -124,7 +129,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
           {updateCount > 0 && <button className="btn btn-accent" onClick={doUpdateAll} disabled={isBusy} style={{ background: 'var(--green)', animation: bulkAction === 'updateAll' ? 'none' : 'updateAllBtnGlow 2.4s ease-in-out infinite' }}>
             {bulkAction === 'updateAll' ? '⏳' : '⬆️'} {bulkAction === 'updateAll' ? t('Updating...') : `${t('Update All')} (${updateCount})`}
           </button>}
-          {staged.length > 0 && !confirmClear && <button className="btn btn-ghost" onClick={() => setConfirmClear(true)} disabled={isBusy} style={{ color: 'var(--red-bright)', borderColor: 'var(--red)' }}>🗑 {t('Clear All')}</button>}
+          {stagedSorted.length > 0 && !confirmClear && <button className="btn btn-ghost" onClick={() => setConfirmClear(true)} disabled={isBusy} style={{ color: 'var(--red-bright)', borderColor: 'var(--red)' }}>🗑 {t('Clear All')}</button>}
           {confirmClear && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: 'var(--red-bright)' }}>{t('Are you sure?')}</span>
             <button className="btn btn-danger btn-sm" onClick={doClearAll}>✓ {t('Yes')}</button>
@@ -133,7 +138,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-        {staged.length === 0 ? (
+        {stagedSorted.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, border: '2px dashed var(--border-2)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-base)', minHeight: 280 }}>
             <div style={{ fontSize: 52, marginBottom: 16, opacity: .4 }}>📦</div>
             <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-3)', marginBottom: 6 }}>{t('No mod archives staged')}</div>
@@ -159,7 +164,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       {f.parsedVersion && <span style={{ fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--accent)', background: 'rgba(218,155,60,.12)', padding: '2px 8px', borderRadius: 3 }}>v{f.parsedVersion}</span>}
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 2 }}>
-                      {f.filename} · {fmt(f.size)}
+                      {f.filename} · {f.statError ? <span style={{ color: 'var(--red-bright)' }} title={`The manager can list this file but cannot read it (${f.statError}). It is usually locked by OneDrive/antivirus, still downloading, or on a path Windows considers too long. This also prevents deleting and installing it.`}>⚠️ {t('unreadable')} ({f.statError})</span> : fmt(f.size)}
                       {f.status === 'update' && <span style={{ color: 'var(--accent)', marginLeft: 6 }}>⬆️ {t('updates')} v{f.installedVersion}</span>}
                       {f.olderVersions?.length > 0 && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}</span>}
                     </div>
@@ -191,10 +196,31 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       {installing === f.filename ? '⏳' : f.status === 'update' ? '⬆️' : f.status === 'reinstall' ? '🔄' : '📥'}
                       {' '}{f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
                     </button>
-                    <button className="btn btn-danger btn-sm" onClick={async () => {
-                      const r = await window.api.removeFromStaging(f.filename);
-                      onRefresh();
-                      if (r && r.success === false) notify(r.error || 'Could not remove file', 'error');
+                    <button className="btn btn-danger btn-sm" disabled={removing.has(f.filename)} onClick={async () => {
+                      // A row can represent several archives of the same mod (the
+                      // primary plus f.olderVersions). Deleting only the primary
+                      // leaves the others on disk and the row instantly re-appears
+                      // with the next version — which looks like "delete did
+                      // nothing". Remove every file the row stands for.
+                      const filenames = [f.filename, ...(f.olderVersions || []).map(o => o.filename)];
+                      // Hide the row immediately so the click feels instant, then
+                      // reconcile against the real folder contents.
+                      setRemoving(prev => { const n = new Set(prev); filenames.forEach(x => n.add(x)); return n; });
+                      try {
+                        const results = await Promise.all(filenames.map(fn => window.api.removeFromStaging(fn)));
+                        const failed = results.filter(r => r && r.success === false);
+                        if (failed.length) notify(failed[0].error || 'Could not remove file', 'error');
+                        else {
+                          const deferred = results.find(r => r && r.deferred && r.note);
+                          if (deferred) notify(deferred.note, 'warn');
+                        }
+                        await onRefresh();
+                      } catch (e) {
+                        notify(e?.message || 'Could not remove file', 'error');
+                        await onRefresh();
+                      } finally {
+                        setRemoving(prev => { const n = new Set(prev); filenames.forEach(x => n.delete(x)); return n; });
+                      }
                     }}>✕</button>
                   </div>
                 </div>

@@ -1,3 +1,30 @@
+Version 1.1.1
+FIXED
+- Steam Deck / Linux: mods packed on Windows (EnhancedPrefabLoader and its API) extracted as single files with backslashes in their names instead of real folders, so BepInEx never loaded them. Folders are now rebuilt correctly on every platform
+- Plugin mods such as TextureReplacer could be installed to the BepInEx root, where BepInEx ignores them. They now always land in BepInEx/plugins (e.g. BepInEx/plugins/TextureReplacer/TextureReplacer.dll), even if the extract target is set wrongly
+- Xbox Game Pass: selecting the install folder now automatically uses the "Content" folder inside it, so mods install next to the game executable where BepInEx can load them
+
+Version 1.1.0
+NEW
+- Mod names can be edited directly in the Installed Mods tab (hover a mod, click the ✏️ button)
+- Progress bars when enabling/disabling mods, uninstalling, and switching profiles
+FIXED
+- Xbox Game Pass: the Play button launched Steam instead of the game. It now finds and runs the real game executable for any non-Steam install, including Game Pass installed to a custom folder and layouts where the game sits in a Content\ subfolder. Falls back to the Game Pass launch helper when the executable itself is licence-locked
+- Your chosen language now persists between restarts instead of resetting to the system language
+- File conflicts now say what they conflict with and over which file, shown under the mod name and on hover. The "DEPS" column is now "ISSUES"
+- Support for Nexus filename changes (mod ID, version, build timestamp and download hash suffixes) so updates replace the existing mod instead of installing a duplicate
+- Mods whose names end in a number (e.g. "Pokemon Expansions - Generation 1/2/3") are no longer merged into one entry
+- Pre-configured BepInEx packs that ship version.dll (Unity Doorstop) are no longer blocked by the security scan
+- Archives could stay locked and undeletable after installing until the manager was closed
+
+Version 1.0.9
+FIXED
+- Xbox Game Pass users could have the manager launch Steam instead of their game. The Play button now launches the actual game executable from the folder you set for any non-Steam install (Game Pass in a custom folder included), and only uses the Steam launcher for real Steam installs
+
+Version 1.0.7
+NEW
+- Mod names can now be edited directly in the Installed Mods tab — hover a mod and click the ✏️ button, then press Enter or click away to save (Escape cancels). Renaming only changes the display name; the mod's files, group, enabled state, and tracking are unaffected
+
 Version 1.0.6
 NEW
 - Progress bars when enabling/disabling a mod, uninstalling a mod, and switching profiles — large mods (hundreds of files) now show a live percentage and bar instead of appearing frozen, and buttons lock during the operation to prevent double-clicks
