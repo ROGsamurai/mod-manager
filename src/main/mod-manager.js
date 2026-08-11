@@ -33,6 +33,10 @@ class ModManager {
     this.portablePath = null;
     this.mods = new Map();
     this.onProgress = null; // Set from main.js to send progress to renderer
+    // Staged archives the user removed that were locked by another process at the
+    // time (OneDrive sync / antivirus). They are hidden from the staged list and
+    // retried on every refresh and on quit — see removeFromStaging.
+    this._pendingDeletes = new Set();
     this._loadDb();
     this._migrateModData();
   }
@@ -943,7 +947,36 @@ class ModManager {
   getStagingPath() { return path.join(this.portablePath || '.', 'staging'); }
   _getDisabledPath() { return path.join(this.portablePath || '.', 'disabled-mods'); }
 
-  setGamePath(p) { this.gamePath = p; store.set('gamePath', p); }
+  /**
+   * Normalize a chosen game folder to the one that actually contains the game
+   * executable.
+   *
+   * Xbox Game Pass installs look like:
+   *   <install root>\gamelaunchhelper.exe
+   *   <install root>\Content\Card Shop Simulator.exe
+   * Mods (BepInEx, doorstop, plugins) must sit next to the EXE — i.e. in
+   * Content\ — or BepInEx never loads. Users naturally browse to the install
+   * root, which would install every mod one level too high and silently do
+   * nothing in game. If the selected folder has no exe but Content\ does, use
+   * Content\ instead.
+   */
+  _normalizeGamePath(p) {
+    if (!p) return p;
+    const EXE = 'Card Shop Simulator.exe';
+    try {
+      if (fs.existsSync(path.join(p, EXE))) return p;
+      const content = path.join(p, 'Content');
+      if (fs.existsSync(path.join(content, EXE))) return content;
+    } catch {}
+    return p;
+  }
+
+  setGamePath(p) {
+    const resolved = this._normalizeGamePath(p);
+    this.gamePath = resolved;
+    store.set('gamePath', resolved);
+    return resolved;
+  }
   getGamePath() { return this.gamePath; }
 
   getTargetPath(key) {
@@ -1025,8 +1058,13 @@ class ModManager {
       // "[Optional]" — so different downloads of the same mod collapse to one
       // base key for overwrite/dedup detection.
       .replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, '')
-      // Then strip a trailing version — "v1.1.6", "1.1.6".
-      .replace(/\s*v?\d+(\.\d+)*\s*$/i, '')
+      // Then strip a trailing version — but ONLY a dotted number ("1.1.6", "3.3")
+      // or a 'v'-prefixed one ("v2", "v1.1.6"). A bare trailing integer must be
+      // kept: it is part of the name, not a version — "Pokemon Expansions -
+      // Generation 1/2/3" are three DIFFERENT mods and must not collapse to one,
+      // and "Base Set 2" is a name, not "Base Set" v2. This mirrors the version
+      // rule in _parseNexusFilename so the two stay consistent.
+      .replace(/\s*(?:v\d+(?:\.\d+)*|\d+(?:\.\d+)+)\s*$/i, '')
       .trim();
   }
 
@@ -1046,6 +1084,10 @@ class ModManager {
     const dir = this.getStagingPath();
     if (!fs.existsSync(dir)) return [];
 
+    // Retry anything that was locked when the user removed it — so it vanishes
+    // for good the moment OneDrive/antivirus lets go, with no action needed.
+    this.sweepPendingDeletes();
+
     // Installed versions lookup
     const installed = new Map();
     for (const mod of this.mods.values()) {
@@ -1058,7 +1100,11 @@ class ModManager {
     // through chokidar and crashing the main process.
     let entries;
     try {
-      entries = fs.readdirSync(dir).filter(f => /\.(zip|rar|7z)$/i.test(f));
+      entries = fs.readdirSync(dir)
+        .filter(f => /\.(zip|rar|7z)$/i.test(f))
+        // Files the user already removed but that were locked at the time stay on
+        // disk until the lock clears — never show them again.
+        .filter(f => !this._pendingDeletes.has(f));
     } catch (err) {
       console.warn('[getStagedFiles] readdir failed:', err.message);
       return [];
@@ -1072,19 +1118,25 @@ class ModManager {
       const parsed = this._parseNexusFilename(f);
       let size = 0;
       let mtime = 0;
+      let statError = null;
       try {
         const st = fs.statSync(path.join(dir, f));
         size = st.size;
         mtime = st.mtimeMs;
       } catch (err) {
         // Keep the file in the list with size 0 so the user can see and delete it.
-        // Common causes: OneDrive unsynced placeholder, file locked by AV, etc.
-        console.warn(`[getStagedFiles] stat failed for ${f}:`, err.code || err.message);
+        // Record WHY so the UI can say "unreadable" instead of silently showing
+        // "0 B" — a file the manager can list but cannot stat is almost always
+        // locked, mid-sync (OneDrive), or on a path Windows considers too long,
+        // and that same failure is what blocks deleting and installing it.
+        statError = err.code || err.message || 'unknown';
+        console.warn(`[getStagedFiles] stat failed for ${f}:`, statError);
       }
       allFiles.push({
         filename: f,
         size,
         mtime,
+        statError,
         parsedName: parsed.name,
         parsedVersion: parsed.version,
         base: this._baseName(parsed.name),
@@ -1143,6 +1195,7 @@ class ModManager {
       result.push({
         filename: newest.filename,
         size: newest.size,
+        statError: newest.statError || null,
         parsedName: newest.parsedName,
         parsedVersion: newest.parsedVersion,
         status,
@@ -1221,15 +1274,48 @@ class ModManager {
     // "Collection Tracker" so it overwrites the plain "Collection Tracker"
     // instead of installing alongside it as a phantom second copy.
     let work = base.replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, '').trim();
+    let version = '';
+
+    // Nexus's latest download format appends "<modID> <version> [timestamp] <hash>"
+    // to the name, space-separated, with a random alphanumeric download hash last
+    // and (in newer builds) an ISO-ish build timestamp before it:
+    //   "Enhanced Binder 1116 1.0.0 KV1sEKw3T"                    → name, id, ver, hash
+    //   "Collection Tracker v1.1.7 867 1.1.7 cF8ECcmKb"           → name+vVer, id, ver, hash
+    //   "Enhanced Binder 1116 1.0.5 2026-07-07T22-24Z 3ti183gmM"  → name, id, ver, timestamp, hash
+    // Strip that suffix from the right. The hash is only stripped when the token
+    // before it is recognizable metadata (version, number, or timestamp), so a
+    // mod name that merely ends in a long alphanumeric word isn't mistaken for a
+    // hash. Each metadata token is popped at most once, so a mod name that ends
+    // in a bare number (e.g. "Base Set 2") keeps that number.
+    // A download hash is a random 8–16 char alphanumeric token. Nexus hashes
+    // either contain a digit ("KV1sEKw3T") or have an "internal capital" — a
+    // lowercase letter followed later by an uppercase ("uGRhSuxST", "cF8ECcmKb").
+    // Natural trailing words ("Remastered", "Extender") have at most a leading
+    // capital, so requiring a digit OR an internal capital strips real hashes
+    // without eating ordinary name words that follow a number.
+    const isHashTok = (tk) => !!tk && tk.length >= 8 && tk.length <= 16 && /^[A-Za-z0-9]+$/.test(tk) && (/\d/.test(tk) || /[a-z].*[A-Z]/.test(tk));
+    const isVerTok  = (tk) => !!tk && /^\d+(\.\d+)+$/.test(tk);                        // dotted version, e.g. 1.0.5
+    const isIntTok  = (tk) => !!tk && /^\d+$/.test(tk);                               // mod ID / bare number
+    const isTsTok   = (tk) => !!tk && /^\d{4}-\d{2}-\d{2}(t[\dhms.:\-]*z?)?$/i.test(tk); // 2026-07-07 or 2026-07-07T22-24Z
+    const isMetaTok = (tk) => isVerTok(tk) || isIntTok(tk) || isTsTok(tk);
+    const tokens = work.split(/\s+/);
+    if (tokens.length >= 3 && isHashTok(tokens[tokens.length - 1]) && isMetaTok(tokens[tokens.length - 2])) {
+      tokens.pop();                                                                     // random download hash
+      if (isTsTok(tokens[tokens.length - 1])) tokens.pop();                             // optional build timestamp
+      if (isVerTok(tokens[tokens.length - 1]) || isIntTok(tokens[tokens.length - 1])) version = tokens.pop(); // version
+      if (isIntTok(tokens[tokens.length - 1])) tokens.pop();                            // mod ID
+      work = tokens.join(' ');
+    }
 
     // Then pull an optional trailing version token off what's left. Require a
     // dotted number ("1.1.6") OR a 'v' prefix ("v2") so we never strip a
     // legitimate trailing integer that's part of the name (e.g. "Base Set 2").
+    // This also strips an embedded "vX.Y.Z" left in the name by the hash format
+    // (e.g. "Collection Tracker v1.1.7" after the id/ver/hash suffix is removed).
     let name = work;
-    let version = '';
     const m = work.match(/^(.*?)[\s_-]+v?(\d+(?:\.\d+)+)\s*$/i)  // "Name v1.1.6" / "Name 1.1.6"
            || work.match(/^(.*?)[\s_-]+v(\d+)\s*$/i);            // "Name v2"
-    if (m) { name = m[1]; version = m[2]; }
+    if (m) { name = m[1]; if (!version) version = m[2]; }
     name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
     name = name.replace(/\.(zip|rar|7z)$/i, '').trim();
     return { name: name || base, version: version || '' };
@@ -1252,25 +1338,101 @@ class ModManager {
     return { added, skipped: [] };
   }
 
-  removeFromStaging(f) {
-    const p = path.join(this.getStagingPath(), f);
-    if (!fs.existsSync(p)) return { success: true };
-    // OneDrive / AV can hold transient locks. Retry a few times before giving up
-    // so we don't surface EPERM to the user for files that will be writable in a moment.
-    for (let i = 0; i < 3; i++) {
-      try {
-        fs.removeSync(p);
-        return { success: true };
-      } catch (err) {
-        if (i === 2) return { success: false, error: err.code === 'EPERM'
-          ? 'File is locked by another process (OneDrive sync or antivirus). Pause sync/exclude the folder and try again.'
-          : err.message };
-        // brief wait before retry
-        const until = Date.now() + 150;
-        while (Date.now() < until) { /* spin */ }
+  async removeFromStaging(f) {
+    const dir = this.getStagingPath();
+    // Sweep any leftovers from a previous rename-fallback delete (see below).
+    try {
+      for (const e of fs.readdirSync(dir)) {
+        if (/\.pending-delete-\d+$/.test(e)) { try { fs.rmSync(path.join(dir, e), { force: true }); } catch {} }
       }
+    } catch {}
+
+    // Resolve the name against the real directory listing. getStagedFiles() builds
+    // the UI list from readdir, so readdir is the source of truth for "is this row
+    // still here". If a file can be listed but not stat'ed or deleted via the path
+    // we build, the name we were handed doesn't match the on-disk entry (encoding
+    // normalization, a trailing space, a >MAX_PATH path).
+    let real = f;
+    try {
+      const entries = fs.readdirSync(dir);
+      real = entries.find(e => e === f)
+        || entries.find(e => e.normalize('NFC') === String(f).normalize('NFC'))
+        || entries.find(e => e.toLowerCase() === String(f).toLowerCase())
+        || f;
+    } catch { /* fall through with the given name */ }
+
+    const p = path.join(dir, real);
+    const stillListed = () => {
+      try { return fs.readdirSync(dir).includes(real); } catch { return false; }
+    };
+    if (!stillListed()) { this._pendingDeletes.delete(real); return { success: true }; }
+
+    // Windows refuses unlink on a read-only file with EPERM — clear the flag first.
+    try { fs.chmodSync(p, 0o666); } catch {}
+
+    // Retry with a real async wait, NOT a synchronous spin. A busy-wait blocks the
+    // main process's event loop, so any in-flight handle release (a 7za child
+    // exiting, a stream closing) can never be processed while we spin — the retries
+    // are guaranteed to see the same lock that caused the first failure. Awaiting
+    // yields the loop so those handles actually get released between attempts.
+    let lastErr = null;
+    const delays = [0, 120, 300, 700];
+    for (const wait of delays) {
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      try {
+        fs.rmSync(p, { force: true, maxRetries: 3, retryDelay: 100 });
+      } catch (err) {
+        lastErr = err;
+      }
+      if (!stillListed()) { this._pendingDeletes.delete(real); return { success: true }; }
     }
-    return { success: false, error: 'Could not remove file.' };
+
+    // Last resort: Windows will often let a locked file be RENAMED even when it
+    // refuses to delete it. Move it out of the way so it leaves the staged list
+    // immediately, and clean it up on the next sweep.
+    try {
+      const parked = path.join(dir, `${real}.pending-delete-${Date.now()}`);
+      fs.renameSync(p, parked);
+      try { fs.rmSync(parked, { force: true }); } catch { /* swept later */ }
+      if (!stillListed()) { this._pendingDeletes.delete(real); return { success: true }; }
+    } catch (err) {
+      lastErr = err || lastErr;
+    }
+
+    // The file is locked by something outside this process (OneDrive sync, antivirus,
+    // a deny ACL) — nothing we can do from in here will force it right now. Rather
+    // than leaving a row the user can't get rid of, mark it deleted: it is filtered
+    // out of the staged list immediately, retried automatically on every refresh,
+    // and swept again on quit. From the user's point of view it disappears at once
+    // and the file goes as soon as the lock clears.
+    this._pendingDeletes.add(real);
+    const code = lastErr && (lastErr.code || '');
+    return {
+      success: true,
+      deferred: true,
+      error: null,
+      note: `"${real}" is locked by another process${code ? ` (${code})` : ''} — it has been removed from the list and will be deleted automatically as soon as the lock clears.`,
+    };
+  }
+
+  /**
+   * Retry any deletions that were blocked earlier (locked by OneDrive/antivirus).
+   * Cheap and silent — called on every staged-list refresh and on quit, so a file
+   * the user removed disappears for good the moment the lock is released.
+   */
+  sweepPendingDeletes() {
+    if (!this._pendingDeletes || this._pendingDeletes.size === 0) return;
+    const dir = this.getStagingPath();
+    for (const name of Array.from(this._pendingDeletes)) {
+      const target = path.join(dir, name);
+      try {
+        try { fs.chmodSync(target, 0o666); } catch {}
+        fs.rmSync(target, { force: true });
+      } catch { /* still locked — try again next time */ }
+      let gone = false;
+      try { gone = !fs.readdirSync(dir).includes(name); } catch { gone = true; }
+      if (gone) this._pendingDeletes.delete(name);
+    }
   }
 
   clearStaging() {
@@ -1293,34 +1455,82 @@ class ModManager {
    * happens, fall back to the bundled 7za binary which handles them fine.
    * Returns [{ path: 'forward/slashed/path', size: Number, isDir: Boolean }, ...]
    */
+  /**
+   * Run `7za l` and resolve the raw entry list, guaranteeing the child process
+   * and its stream are torn down before resolving.
+   *
+   * node-7z spawns 7za.exe, which holds an OPEN HANDLE on the archive while it
+   * runs. If the stream is left dangling (no destroy, no kill) the child can
+   * outlive the call, and on Windows that handle makes the .zip undeletable
+   * (EPERM) until the whole app exits — which is exactly the "the ✕ button only
+   * works after I close the manager" symptom. Always reap the child.
+   */
+  _sevenList(archivePath, bin) {
+    return new Promise((resolve, reject) => {
+      const entries = [];
+      let settled = false;
+      let s;
+      const teardown = () => {
+        try { if (s && s._childProcess && !s._childProcess.killed) s._childProcess.kill(); } catch {}
+        try { if (s && typeof s.destroy === 'function') s.destroy(); } catch {}
+        try { if (s && typeof s.removeAllListeners === 'function') s.removeAllListeners(); } catch {}
+      };
+      const finish = (err, val) => {
+        if (settled) return;
+        settled = true;
+        teardown();
+        if (err) reject(err); else resolve(val);
+      };
+      try {
+        s = Seven.list(archivePath, { $bin: bin || this._get7zBin() });
+      } catch (err) {
+        return finish(err);
+      }
+      s.on('data', e => entries.push(e));
+      s.on('end', () => finish(null, entries));
+      s.on('error', err => finish(err));
+    });
+  }
+
   async _listZipEntries(archivePath) {
     try {
       const StreamZip = require('node-stream-zip');
-      const zip = new StreamZip.async({ file: archivePath });
-      try {
-        const entries = await zip.entries();
-        const result = [];
-        for (const [name, entry] of Object.entries(entries)) {
-          result.push({ path: name.replace(/\\/g, '/'), size: entry.size, isDir: entry.isDirectory });
-        }
-        return result;
-      } finally {
-        await zip.close();
+      // Deliberately the callback API, NOT StreamZip.async. The async wrapper's
+      // close() does `const zip = await this[propZip]` first, so when an archive
+      // fails to open (0-byte, truncated, corrupt, still downloading) that promise
+      // is already rejected and close() throws WITHOUT ever releasing the file
+      // descriptor. On Windows the leaked handle leaves the .zip locked: deleting
+      // it silently becomes a "delete pending" that only completes when the app
+      // exits — so the file appears undeletable and reports no error. The
+      // callback API's close() is safe and idempotent even when the open failed.
+      const entriesObj = await new Promise((resolve, reject) => {
+        const zip = new StreamZip({ file: archivePath, storeEntries: true });
+        let settled = false;
+        const finish = (err, val) => {
+          if (settled) return;
+          settled = true;
+          try { zip.close(); } catch { /* already closed */ }
+          if (err) reject(err); else resolve(val);
+        };
+        zip.on('ready', () => { let e; try { e = zip.entries(); } catch (err) { return finish(err); } finish(null, e); });
+        zip.on('error', err => finish(err));
+      });
+      const result = [];
+      for (const [name, entry] of Object.entries(entriesObj)) {
+        result.push({ path: name.replace(/\\/g, '/'), size: entry.size, isDir: entry.isDirectory });
       }
+      return result;
     } catch (err) {
       if (!/Malicious entry/.test(err.message || '')) throw err;
       // Fallback: 7za handles Windows-style zips (backslash paths) correctly
       const result = [];
-      await new Promise((res, rej) => {
-        const s = Seven.list(archivePath, { $bin: this._get7zBin() });
-        s.on('data', e => result.push({
+      for (const e of await this._sevenList(archivePath)) {
+        result.push({
           path: (e.file || '').replace(/\\/g, '/'),
           size: e.size || 0,
           isDir: (e.attr || '').startsWith('D'),
-        }));
-        s.on('end', res);
-        s.on('error', rej);
-      });
+        });
+      }
       return result;
     }
   }
@@ -1335,11 +1545,9 @@ class ModManager {
       const rarEntries = await this._listRar(archivePath);
       for (const e of rarEntries) entries.push({ path: e.file, size: e.size, isDir: e.isDir });
     } else {
-      await new Promise((res, rej) => {
-        const s = Seven.list(archivePath, { $bin: this._get7zBin() });
-        s.on('data', e => entries.push({ path: e.file, size: e.size || 0, isDir: e.attr?.startsWith('D') }));
-        s.on('end', res); s.on('error', rej);
-      });
+      for (const e of await this._sevenList(archivePath)) {
+        entries.push({ path: e.file, size: e.size || 0, isDir: e.attr?.startsWith('D') });
+      }
     }
     const suggestedTarget = this._detectTarget(entries);
     const security = this._scanSecurity(entries, filename);
@@ -1394,6 +1602,21 @@ class ModManager {
       'mono.cecil.dll', 'mono.cecil.rocks.dll', 'mono.cecil.pdb.dll',
       'monomod.runtimedetour.dll', 'monomod.utils.dll', 'newtonsoft.json.dll'];
 
+    // Detect a legitimate pre-configured BepInEx / Unity Doorstop pack. Doorstop
+    // is loaded via a proxy DLL that Windows auto-loads from the game root — the
+    // usual names are winhttp.dll AND version.dll. version.dll is otherwise a
+    // classic DLL-hijack target, so we only treat it as the safe loader when the
+    // archive clearly IS a BepInEx pack: it ships the Doorstop marker/config or a
+    // BepInEx/core layout. (winhttp.dll is already in SAFE_DLLS for the same
+    // reason.) Outside that context, version.dll stays blocked below.
+    const lowerPaths = entries.filter(e => !e.isDir).map(e => e.path.replace(/\\/g, '/').toLowerCase());
+    const isBepInExPack =
+      lowerPaths.some(p => p === '.doorstop_version' || p.endsWith('/.doorstop_version')) ||
+      lowerPaths.some(p => p.split('/').pop() === 'doorstop_config.ini') ||
+      lowerPaths.some(p => /(^|\/)bepinex\/core\//.test(p)) ||
+      (lowerPaths.some(p => /(^|\/)bepinex\//.test(p)) &&
+       lowerPaths.some(p => { const n = p.split('/').pop(); return n === 'winhttp.dll' || n === 'version.dll'; }));
+
     for (const entry of entries) {
       if (entry.isDir) continue;
       const p = entry.path.replace(/\\/g, '/');
@@ -1420,8 +1643,14 @@ class ModManager {
         blocked.push(`Attempts to overwrite game executable: "${name}"`);
         continue;
       }
-      // 4. System DLL replacement — BLOCKED
+      // 4. System DLL replacement — BLOCKED, except the BepInEx/Doorstop proxy
+      //    loader (version.dll) at the game root inside a genuine BepInEx pack.
       if (SYSTEM_DLLS.includes(name)) {
+        const isRootLoader = !p.includes('/'); // proxy loader must sit at game root
+        if (name === 'version.dll' && isRootLoader && isBepInExPack) {
+          warnings.push(`Contains BepInEx loader "version.dll" (Unity Doorstop proxy) — expected for a pre-configured BepInEx pack.`);
+          continue;
+        }
         blocked.push(`Contains system DLL: "${name}" — this could compromise your system`);
         continue;
       }
@@ -1570,6 +1799,28 @@ class ModManager {
     const hasPluginsRoot = archivePaths.some(p => /^plugins(\/|$)/i.test(p) || /^patchers(\/|$)/i.test(p));
     if (hasPluginsRoot && targetKey !== 'bepinex' && targetKey !== 'game_root') {
       targetKey = 'bepinex';
+    }
+
+    // Reverse guard: a plain plugin mod (a named folder holding a .dll, with no
+    // BepInEx/ and no plugins//patchers/ of its own) must NOT be dropped at the
+    // BepInEx root — that yields BepInEx/<Mod>/<Mod>.dll, which BepInEx never
+    // loads because it only scans plugins/ and patchers/. Send it to plugins/.
+    // Only the recognized BepInEx subfolder names are allowed to sit at the root.
+    if (!bepInfo.found && !hasPluginsRoot && targetKey === 'bepinex') {
+      const BEPINEX_SUBDIRS = ['plugins', 'patchers', 'config', 'core', 'cache', 'unity-libs', 'monomod'];
+      const topLevel = new Set();
+      let dllInNamedFolder = false;
+      for (const raw of archivePaths) {
+        const p = String(raw).replace(/\\/g, '/');
+        const parts = p.split('/').filter(Boolean);
+        if (parts.length === 0) continue;
+        topLevel.add(parts[0].toLowerCase());
+        if (parts.length >= 2 && /\.dll$/i.test(p)) dllInNamedFolder = true;
+      }
+      const touchesBepInExSubdir = [...topLevel].some(n => BEPINEX_SUBDIRS.includes(n));
+      if (dllInNamedFolder && !touchesBepInExSubdir) {
+        targetKey = 'plugins';
+      }
     }
 
     // Some archives wrap content in a single folder that contains a plugins/
@@ -1834,26 +2085,18 @@ class ModManager {
     } else if (/\.rar$/i.test(filename)) {
       const bin7z = this._getSystem7z();
       if (bin7z) {
-        await new Promise((res, rej) => {
-          const s = Seven.list(archivePath, { $bin: bin7z });
-          s.on('data', e => {
-            const first = e.file.split(/[\/\\/]/)[0];
-            topItems.add(first);
-            if (!e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
-          });
-          s.on('end', res); s.on('error', rej);
-        });
-      }
-    } else {
-      await new Promise((res, rej) => {
-        const s = Seven.list(archivePath, { $bin: this._get7zBin() });
-        s.on('data', e => {
-          const first = e.file.split(/[/\\]/)[0];
+        for (const e of await this._sevenList(archivePath, bin7z)) {
+          const first = e.file.split(/[\/\\/]/)[0];
           topItems.add(first);
           if (!e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
-        });
-        s.on('end', res); s.on('error', rej);
-      });
+        }
+      }
+    } else {
+      for (const e of await this._sevenList(archivePath)) {
+        const first = e.file.split(/[/\\]/)[0];
+        topItems.add(first);
+        if (!e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
+      }
     }
 
     const hasSingleFolder = topItems.size === 1 && topFiles.length === 0;
@@ -1880,26 +2123,45 @@ class ModManager {
   _get7zBin() {
     let p = sevenBin.path7za;
     if (p.includes('app.asar')) p = p.replace('app.asar', 'app.asar.unpacked');
+    // On Linux/macOS the bundled 7za must carry the executable bit. It is often
+    // lost when the app is packaged (or unpacked from an archive that doesn't
+    // preserve POSIX modes), and the result is a bare "spawn ... EACCES" that
+    // breaks every archive operation. Restore it once, cheaply.
+    if (process.platform !== 'win32' && !this._7zChmodDone) {
+      this._7zChmodDone = true;
+      try {
+        const mode = fs.statSync(p).mode;
+        if (!(mode & 0o111)) fs.chmodSync(p, 0o755);
+      } catch (err) {
+        console.warn('[7z] could not set executable bit:', err.code || err.message);
+      }
+    }
     return p;
   }
 
-  /** Find full 7z.exe on system (supports RAR, unlike 7za) */
+  /** Find full 7z on system (supports RAR, unlike 7za) */
   _getSystem7z() {
+    const isWin = process.platform === 'win32';
+    const exe = isWin ? '7z.exe' : '7z';
     // 1. Check for bundled 7z in app assets
     const bundledPaths = [
-      path.join(__dirname, '../../assets/bin/7z.exe'),
-      path.join(__dirname, '../assets/bin/7z.exe'),
+      path.join(__dirname, '../../assets/bin/' + exe),
+      path.join(__dirname, '../assets/bin/' + exe),
     ];
-    if (this.portablePath) bundledPaths.push(path.join(this.portablePath, '7z.exe'));
+    if (this.portablePath) bundledPaths.push(path.join(this.portablePath, exe));
     for (const p of bundledPaths) {
       if (fs.existsSync(p)) return p;
     }
     // 2. Check common install locations
-    const candidates = [
+    const candidates = isWin ? [
       'C:\\Program Files\\7-Zip\\7z.exe',
       'C:\\Program Files (x86)\\7-Zip\\7z.exe',
       'D:\\Program Files\\7-Zip\\7z.exe',
       'D:\\Program Files (x86)\\7-Zip\\7z.exe',
+    ] : [
+      // p7zip-full / 7zip packages on Linux, Homebrew on macOS
+      '/usr/bin/7z', '/usr/local/bin/7z', '/usr/bin/7zz', '/usr/local/bin/7zz',
+      '/opt/homebrew/bin/7z', '/usr/bin/7za', '/usr/local/bin/7za',
     ];
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
@@ -1907,8 +2169,10 @@ class ModManager {
     // 3. Check PATH
     const { execSync } = require('child_process');
     try {
-      const where = execSync('where 7z.exe', { windowsHide: true, timeout: 3000 }).toString().trim().split('\n')[0].trim();
-      if (where && fs.existsSync(where)) return where;
+      const cmd = isWin ? 'where 7z.exe' : 'command -v 7z || command -v 7zz';
+      const found = execSync(cmd, { windowsHide: true, timeout: 3000, shell: isWin ? undefined : '/bin/sh' })
+        .toString().trim().split('\n')[0].trim();
+      if (found && fs.existsSync(found)) return found;
     } catch {}
     return null;
   }
@@ -1955,6 +2219,9 @@ class ModManager {
           execFile(winrar, args, { windowsHide: true, timeout: 300000 }, (err) => { if (err) rej(new Error(`RAR extraction failed: ${err.message}`)); else res(); });
         });
       }
+      // Windows-packed archives can leave literal-backslash filenames on Linux
+      // (Steam Deck) — rebuild real folders before merging.
+      this._explodeBackslashEntries(tempDir);
       this._mergeDir(tempDir, dest);
     } finally {
       if (fs.existsSync(tempDir)) fs.removeSync(tempDir);
@@ -1966,11 +2233,9 @@ class ModManager {
     const entries = [];
     const bin7z = this._getSystem7z();
     if (bin7z) {
-      await new Promise((res, rej) => {
-        const s = Seven.list(archivePath, { $bin: bin7z });
-        s.on('data', e => entries.push({ file: e.file?.replace(/\\/g, '/'), size: e.size || 0, isDir: e.attr?.startsWith('D') }));
-        s.on('end', res); s.on('error', rej);
-      });
+      for (const e of await this._sevenList(archivePath, bin7z)) {
+        entries.push({ file: e.file?.replace(/\\/g, '/'), size: e.size || 0, isDir: e.attr?.startsWith('D') });
+      }
     } else {
       const winrar = this._getWinRAR();
       if (!winrar) return entries;
@@ -2010,9 +2275,21 @@ class ModManager {
 
   async _extractZip(src, dest, onProgress) {
     const StreamZip = require('node-stream-zip');
-    const zip = new StreamZip.async({ file: src });
+    // Callback API, NOT StreamZip.async — its close() awaits the open promise and
+    // therefore CANNOT release the file descriptor when the archive fails to open.
+    // Zips written by Windows tools use backslash separators, which this library
+    // rejects as "Malicious entry"; we then fall back to 7z extraction, but the
+    // handle from the failed open would stay open for the life of the app and
+    // leave the .zip undeletable (EPERM on stat/unlink/rename) until it exits.
+    // The callback API's close() is safe and idempotent on every path.
+    const zip = new StreamZip({ file: src, storeEntries: true });
+    const closeZip = () => { try { zip.close(); } catch { /* already closed */ } };
     try {
-      const entries = await zip.entries();
+      const entries = await new Promise((resolve, reject) => {
+        zip.on('ready', () => { try { resolve(zip.entries()); } catch (err) { reject(err); } });
+        zip.on('error', reject);
+      });
+
       const fileEntries = Object.values(entries).filter(e => !e.isDirectory);
       const total = fileEntries.length;
       const usePulse = total <= 5; // Too few files for meaningful percentage — pulse instead
@@ -2027,14 +2304,77 @@ class ModManager {
         } else {
           fs.ensureDirSync(path.dirname(target));
           if (usePulse && onProgress) onProgress(-1, done, total);
-          await zip.extract(entry, target);
+          await new Promise((resolve, reject) => {
+            zip.extract(entry, target, err => (err ? reject(err) : resolve()));
+          });
           done++;
           if (onProgress) onProgress(usePulse ? -1 : Math.round((done / total) * 100), done, total);
         }
       }
     } finally {
-      await zip.close();
+      // Unconditional: the handle must never outlive this call, whether the
+      // archive opened, failed to parse, or extraction threw part-way through.
+      closeZip();
     }
+  }
+
+  /**
+   * Rebuild real directories from entries whose names contain literal backslashes.
+   *
+   * Archives packed on Windows (WinRAR and friends) store paths like
+   * "plugins\EnhancedPrefabLoader\EnhancedPrefabLoader.dll". Windows extractors
+   * treat "\" as a separator, but on Linux (Steam Deck) it is a perfectly legal
+   * filename character — so yauzl/7z create ONE flat file literally named
+   * "plugins\EnhancedPrefabLoader\EnhancedPrefabLoader.dll" instead of nested
+   * folders. BepInEx then never finds the plugin. Walk the freshly extracted
+   * tree and move any such entry to the path it was meant to have.
+   *
+   * Runs on every platform: it is a no-op when the extractor already split the
+   * path, and on Windows "\" can't appear in a filename anyway.
+   */
+  _explodeBackslashEntries(dir) {
+    const collect = (d, rel, out) => {
+      let entries;
+      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const abs = path.join(d, e.name);
+        const relPath = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) collect(abs, relPath, out);
+        else out.push({ abs, relPath });
+      }
+    };
+    const files = [];
+    collect(dir, '', files);
+
+    for (const { abs, relPath } of files) {
+      if (!relPath.includes('\\')) continue;
+      // Normalize separators, then drop any "." / ".." segments so a crafted
+      // archive can't escape the extraction directory.
+      const parts = relPath.replace(/\\/g, '/').split('/').filter(p => p && p !== '.' && p !== '..');
+      if (parts.length === 0) continue;
+      const target = path.join(dir, ...parts);
+      if (path.resolve(target) === path.resolve(abs)) continue;
+      if (!path.resolve(target).startsWith(path.resolve(dir) + path.sep)) continue;
+      try {
+        fs.ensureDirSync(path.dirname(target));
+        fs.moveSync(abs, target, { overwrite: true });
+      } catch (err) {
+        console.warn('[explodeBackslash] could not relocate', relPath, err.code || err.message);
+      }
+    }
+
+    // Remove directories left empty (or whose names still contain a backslash).
+    const prune = (d) => {
+      let entries;
+      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (e.isDirectory()) prune(path.join(d, e.name));
+      }
+      if (d !== dir) {
+        try { if (fs.readdirSync(d).length === 0) fs.removeSync(d); } catch {}
+      }
+    };
+    prune(dir);
   }
 
   /**
@@ -2053,6 +2393,9 @@ class ModManager {
         dir: tempDir,
         onEntry: () => { done++; if (onProgress) onProgress(-1, done, -1); },
       });
+      // Windows-packed archives can leave literal-backslash filenames on Linux
+      // (Steam Deck) — rebuild real folders before merging.
+      this._explodeBackslashEntries(tempDir);
       this._mergeDir(tempDir, dest);
     } finally {
       if (fs.existsSync(tempDir)) fs.removeSync(tempDir);
@@ -2078,6 +2421,9 @@ class ModManager {
           rej(new Error(`Extraction failed: ${err.message || err.stderr || 'Unknown error'}. Make sure the archive is not corrupted.`));
         });
       });
+      // Windows-packed archives can leave literal-backslash filenames on Linux
+      // (Steam Deck) — rebuild real folders before merging.
+      this._explodeBackslashEntries(tempDir);
       this._mergeDir(tempDir, dest);
     } finally {
       if (fs.existsSync(tempDir)) fs.removeSync(tempDir);
@@ -2115,15 +2461,17 @@ class ModManager {
       for (const e of zipEntries) { if (!e.isDir) files.push(e.path); }
     } else if (/\.rar$/i.test(archivePath)) {
       const rarEntries = await this._listRar(archivePath);
-      for (const e of rarEntries) { if (!e.isDir) files.push(e.file.replace(/\\/g, '/')); }
+      for (const e of rarEntries) { if (!e.isDir) files.push(e.file); }
     } else {
-      await new Promise((res, rej) => {
-        const s = Seven.list(archivePath, { $bin: this._get7zBin() });
-        s.on('data', e => { if (!e.attr?.startsWith('D')) files.push(e.file); });
-        s.on('end', res); s.on('error', rej);
-      });
+      for (const e of await this._sevenList(archivePath)) {
+        if (!e.attr?.startsWith('D')) files.push(e.file);
+      }
     }
-    return files;
+    // Always store forward-slash relative paths. Archives packed on Windows use
+    // backslashes; on Linux (Steam Deck) those are NOT separators, so a tracked
+    // path like "plugins\Foo\Foo.dll" would never match the extracted
+    // "plugins/Foo/Foo.dll" and disable/uninstall would silently skip the file.
+    return files.map(f => String(f).replace(/\\/g, '/')).filter(Boolean);
   }
 
   async uninstallMod(modId, onProgress) {
@@ -2811,12 +3159,9 @@ class ModManager {
         const rarEntries = await this._listRar(archivePath);
         for (const e of rarEntries) { if (e.file) paths.push(e.file.replace(/\\/g, '/')); }
       } else {
-        await new Promise((res, rej) => {
-          const s = Seven.list(archivePath, { $bin: this._get7zBin() });
-          s.on('data', e => { if (e.file) paths.push(e.file.replace(/\\/g, '/')); });
-          s.on('end', res);
-          s.on('error', rej);
-        });
+        for (const e of await this._sevenList(archivePath)) {
+          if (e.file) paths.push(e.file.replace(/\\/g, '/'));
+        }
       }
     } catch (err) {
       const fnLower = path.basename(archivePath).toLowerCase();
@@ -3859,6 +4204,21 @@ class ModManager {
     const groups = this.getModGroups();
     const g = groups.find(g => g.id === id);
     if (g) { g.name = name; store.set('modGroups', groups); }
+  }
+  /**
+   * Rename an installed mod's display name. This changes the name used for
+   * display and, going forward, for same-mod matching on reinstall (via
+   * _baseName). The mod's stable `id` is unchanged, so file tracking, grouping
+   * membership, enabled state, and everything keyed on id are unaffected.
+   */
+  renameMod(modId, newName) {
+    const mod = this.mods.get(modId);
+    if (!mod) throw new Error(`Mod not found: ${modId}`);
+    const clean = String(newName == null ? '' : newName).replace(/\s+/g, ' ').trim();
+    if (!clean) throw new Error('Name cannot be empty');
+    mod.name = clean;
+    this._saveDb();
+    return mod;
   }
   reorderModGroups(orderedIds) {
     const groups = this.getModGroups();

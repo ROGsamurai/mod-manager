@@ -8,12 +8,20 @@ function Root() {
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
-    window.api.getLocale().then(loc => {
-      // Map system locale to our supported locales
-      // e.g. "es-419" → "es", "zh-CN" → "zh", "pt-BR" → "pt-BR"
-      setLocale(loc || 'en');
-      setReady(true);
-    }).catch(() => setReady(true));
+    // A language the user explicitly picked always wins and must survive restarts.
+    // Only fall back to the OS locale when nothing has been saved yet (first run).
+    Promise.resolve(window.api.getLanguage ? window.api.getLanguage() : null)
+      .then(saved => {
+        if (saved) { setLocale(saved); setReady(true); return; }
+        return window.api.getLocale().then(loc => { setLocale(loc || 'en'); setReady(true); });
+      })
+      .catch(() => {
+        // Settings unavailable — fall back to system locale, then English.
+        Promise.resolve(window.api.getLocale ? window.api.getLocale() : 'en')
+          .then(loc => setLocale(loc || 'en'))
+          .catch(() => {})
+          .finally(() => setReady(true));
+      });
   }, []);
 
   if (!ready) return null;

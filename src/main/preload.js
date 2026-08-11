@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('mods:toggle-progress', handler);
   },
   getConflicts: () => ipcRenderer.invoke('mods:conflicts'),
+  renameMod: (id, name) => ipcRenderer.invoke('mods:rename', id, name),
   markCore: (id, isCore) => ipcRenderer.invoke('mods:mark-core', id, isCore),
   markCoreBulk: (ids, isCore) => ipcRenderer.invoke('mods:mark-core-bulk', ids, isCore),
   getProfiles: () => ipcRenderer.invoke('profiles:list'),
@@ -59,6 +60,8 @@ contextBridge.exposeInMainWorld('api', {
   setDeleteAfterInstall: (val) => ipcRenderer.invoke('settings:set-delete-after-install', val),
   getTheme: () => ipcRenderer.invoke('settings:get-theme'),
   setTheme: (id) => ipcRenderer.invoke('settings:set-theme', id),
+  getLanguage: () => ipcRenderer.invoke('settings:get-language'),
+  setLanguage: (lang) => ipcRenderer.invoke('settings:set-language', lang),
   getMinimizeToTray: () => ipcRenderer.invoke('settings:get-minimize-to-tray'),
   setMinimizeToTray: (val) => ipcRenderer.invoke('settings:set-minimize-to-tray', val),
   getMinimizeBtnToTray: () => ipcRenderer.invoke('settings:get-minimize-btn-to-tray'),

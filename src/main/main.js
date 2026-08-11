@@ -132,7 +132,7 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', () => { isQuitting = true; });
+app.on('before-quit', () => { isQuitting = true; try { modManager.sweepPendingDeletes(); } catch {} });
 app.on('window-all-closed', () => { if (stagingWatcher) stagingWatcher.close(); if (tray) tray.destroy(); app.quit(); });
 
 // Window controls
@@ -159,11 +159,14 @@ ipcMain.handle('game:detect', async () => {
 });
 ipcMain.handle('game:get-path', () => { try { return modManager.getGamePath(); } catch { return null; } });
 ipcMain.handle('game:set-path', (_, p) => {
-  try { modManager.setGamePath(p); return { success: true }; }
+  try {
+    const resolved = modManager.setGamePath(p);
+    return { success: true, path: resolved, adjusted: resolved !== p };
+  }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('game:launch', () => {
-  try { gameDetector.launchGame(modManager.gamePath); return { success: true }; }
+  try { return { success: true, ...gameDetector.launchGame(modManager.gamePath) }; }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('game:bepinex', () => {
@@ -186,8 +189,8 @@ ipcMain.handle('staging:add', async () => {
   if (result.canceled) return { success: false };
   return { success: true, added: await modManager.addToStaging(result.filePaths) };
 });
-ipcMain.handle('staging:remove', (_, f) => {
-  try { return modManager.removeFromStaging(f); }
+ipcMain.handle('staging:remove', async (_, f) => {
+  try { return await modManager.removeFromStaging(f); }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('staging:clear', () => {
@@ -252,6 +255,10 @@ ipcMain.handle('mods:toggle', async (event, id) => {
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:conflicts', () => modManager.detectConflicts());
+ipcMain.handle('mods:rename', (_, id, name) => {
+  try { return { success: true, mod: modManager.renameMod(id, name) }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
 ipcMain.handle('mods:mark-core', (_, id, isCore) => {
   try { return { success: true, mod: modManager.markCore(id, isCore) }; }
   catch (e) { return { success: false, error: e.message }; }
@@ -348,6 +355,10 @@ ipcMain.handle('settings:get-delete-after-install', () => modManager.getDeleteAf
 ipcMain.handle('settings:set-delete-after-install', (_, val) => { modManager.setDeleteAfterInstall(val); return { success: true }; });
 ipcMain.handle('settings:get-theme', () => store.get('theme', 'midnight'));
 ipcMain.handle('settings:set-theme', (_, theme) => { store.set('theme', theme); return { success: true }; });
+// Language: null means "not chosen yet" so we fall back to the system locale on
+// first run. Once the user picks a language it must survive restarts.
+ipcMain.handle('settings:get-language', () => store.get('language', null));
+ipcMain.handle('settings:set-language', (_, lang) => { store.set('language', lang); return { success: true }; });
 ipcMain.handle('settings:get-minimize-to-tray', () => store.get('minimizeToTray', false));
 ipcMain.handle('settings:set-minimize-to-tray', (_, val) => { store.set('minimizeToTray', val); return { success: true }; });
 ipcMain.handle('settings:get-minimize-btn-to-tray', () => store.get('minimizeButtonToTray', false));
