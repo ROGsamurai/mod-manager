@@ -2824,7 +2824,18 @@ class ModManager {
 
   async freshInstall() {
     if (!this.gamePath) throw new Error('Game path not set');
-    const bepDir = path.join(this.gamePath, 'BepInEx');
+
+    // Resolve the BepInEx folder case-insensitively. Windows doesn't care, but
+    // Linux (Steam Deck) does: a folder created as "bepinex" or "BepinEx" by a
+    // hand-installed setup would make an exact-case lookup fail and abort the
+    // whole reset with "BepInEx folder not found".
+    let bepName = 'BepInEx';
+    try {
+      const match = fs.readdirSync(this.gamePath, { withFileTypes: true })
+        .find(e => e.isDirectory() && e.name.toLowerCase() === 'bepinex');
+      if (match) bepName = match.name;
+    } catch {}
+    const bepDir = path.join(this.gamePath, bepName);
     if (!fs.existsSync(bepDir)) throw new Error('BepInEx folder not found');
 
     // Delete everything in BepInEx/ EXCEPT the config/ folder
@@ -2834,11 +2845,26 @@ class ModManager {
       await fs.remove(fullPath);
     }
 
-    // Also delete BepInEx loader files from game root (winhttp.dll, doorstop_config.ini, etc.)
-    const loaderFiles = ['winhttp.dll', 'doorstop_config.ini', '.doorstop_version'];
-    for (const f of loaderFiles) {
-      const fp = path.join(this.gamePath, f);
-      if (fs.existsSync(fp)) await fs.remove(fp);
+    // Also delete BepInEx loader files from the game root. Doorstop ships as a
+    // proxy DLL that Windows auto-loads: usually winhttp.dll, but pre-configured
+    // packs commonly use version.dll instead — leaving that behind meant BepInEx
+    // kept loading after a "fresh install". The run_bepinex.sh / doorstop_libs
+    // entries cover native-Linux BepInEx layouts. Matched case-insensitively so
+    // this behaves identically on Linux.
+    const LOADER_NAMES = new Set([
+      'winhttp.dll', 'version.dll', 'doorstop_config.ini', '.doorstop_version',
+      'run_bepinex.sh', 'libdoorstop.so', 'libdoorstop_x64.so', 'libdoorstop_x86.so',
+    ]);
+    const LOADER_DIRS = new Set(['doorstop_libs']);
+    try {
+      for (const entry of fs.readdirSync(this.gamePath, { withFileTypes: true })) {
+        const lower = entry.name.toLowerCase();
+        if (entry.isDirectory() ? LOADER_DIRS.has(lower) : LOADER_NAMES.has(lower)) {
+          await fs.remove(path.join(this.gamePath, entry.name));
+        }
+      }
+    } catch (err) {
+      console.warn('[freshInstall] loader cleanup:', err.code || err.message);
     }
 
     // Clear disabled-mods folder
