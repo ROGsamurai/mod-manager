@@ -3,7 +3,7 @@ import { useI18n } from '../i18n';
 
 const fmt = b => b>1048576?`${(b/1048576).toFixed(1)} MB`:b>1024?`${(b/1024).toFixed(0)} KB`:`${b} B`;
 
-export default function StagingView({ staged, onInstall, onAdd, onRefresh, notify, installing, installProgress }) {
+export default function StagingView({ staged, onInstall, onAdd, onRefresh, notify, installing, installProgress, gameFound = true }) {
   const { t, tMod } = useI18n();
   const [targets, setTargets] = useState([]);
   const [sels, setSels] = useState({});
@@ -123,10 +123,10 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={onAdd} disabled={isBusy}>{t('+ Add Archives')}</button>
-          {newCount > 0 && <button className="btn btn-accent" onClick={doInstallNew} disabled={isBusy}>
+          {newCount > 0 && <button className="btn btn-accent" onClick={doInstallNew} disabled={isBusy || !gameFound}>
             {bulkAction === 'installNew' ? '⏳' : '📥'} {bulkAction === 'installNew' ? t('Installing...') : `${t('Install New')} (${newCount})`}
           </button>}
-          {updateCount > 0 && <button className="btn btn-accent" onClick={doUpdateAll} disabled={isBusy} style={{ background: 'var(--green)', animation: bulkAction === 'updateAll' ? 'none' : 'updateAllBtnGlow 2.4s ease-in-out infinite' }}>
+          {updateCount > 0 && <button className="btn btn-accent" onClick={doUpdateAll} disabled={isBusy || !gameFound} style={{ background: 'var(--green)', animation: bulkAction === 'updateAll' ? 'none' : 'updateAllBtnGlow 2.4s ease-in-out infinite' }}>
             {bulkAction === 'updateAll' ? '⏳' : '⬆️'} {bulkAction === 'updateAll' ? t('Updating...') : `${t('Update All')} (${updateCount})`}
           </button>}
           {stagedSorted.length > 0 && !confirmClear && <button className="btn btn-ghost" onClick={() => setConfirmClear(true)} disabled={isBusy} style={{ color: 'var(--red-bright)', borderColor: 'var(--red)' }}>🗑 {t('Clear All')}</button>}
@@ -137,6 +137,14 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
           </div>}
         </div>
       </div>
+      {!gameFound && (
+        <div style={{ padding: '12px 20px', background: 'rgba(255,80,80,.10)', borderBottom: '1px solid var(--red)', color: 'var(--red-bright)', fontSize: 14, lineHeight: 1.6, flexShrink: 0 }}>
+          <strong>⚠️ {t('Game not detected')}</strong>
+          <div style={{ marginTop: 4, color: 'var(--text-3)' }}>
+            {t('"Card Shop Simulator.exe" was not found in the selected folder, so installing would put mods where the game cannot load them. Fix the game location in Settings.')}
+          </div>
+        </div>
+      )}
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         {stagedSorted.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, border: '2px dashed var(--border-2)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-base)', minHeight: 280 }}>
@@ -188,11 +196,11 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                     )}
                     <button className="btn btn-ghost btn-sm" onClick={() => doPeek(f.filename)}>{peek === f.filename ? '▲' : '▼'}</button>
                     {f.olderVersions?.length > 0 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => doInstall(f.olderVersions[0].filename, false)} disabled={isBusy} style={{ color: '#c0392b', borderColor: '#c0392b44' }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => doInstall(f.olderVersions[0].filename, false)} disabled={isBusy || !gameFound} style={{ color: '#c0392b', borderColor: '#c0392b44' }}>
                         ⬇️ {t('Downgrade')}
                       </button>
                     )}
-                    <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename, f.status === 'new' || f.status === 'update')} disabled={isBusy} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
+                    <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename, f.status === 'new' || f.status === 'update')} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
                       {installing === f.filename ? '⏳' : f.status === 'update' ? '⬆️' : f.status === 'reinstall' ? '🔄' : '📥'}
                       {' '}{f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
                     </button>

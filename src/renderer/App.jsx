@@ -255,7 +255,7 @@ function AppInner() {
         <Sidebar view={view} onNav={setView} modCount={mods.length} stagedCount={staged.length} themeId={themeId} onChangeTheme={changeTheme} />
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-surface)'}}>
           {view==='suggested'&&<SuggestedMods/>}
-          {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress}/>}
+          {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
           {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
           {view==='profiles'&&<ProfileManager notify={notify} onRefresh={refreshMods}/>}

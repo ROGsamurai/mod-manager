@@ -7,6 +7,10 @@ const Store = require('electron-store');
 
 const store = new Store({ name: 'mod-manager' });
 
+// The game executable — used to verify the configured game folder is correct
+// before anything is installed into it.
+const GAME_EXE = 'Card Shop Simulator.exe';
+
 const TARGETS = {
   game_root: { label: 'Game Root Folder', relative: '' },
   bepinex:   { label: 'BepInEx', relative: 'BepInEx' },
@@ -994,10 +998,43 @@ class ModManager {
     return fs.existsSync(path.join(this.gamePath, 'BepInEx', 'core')) && fs.existsSync(path.join(this.gamePath, 'winhttp.dll'));
   }
 
+  /**
+   * Is "Card Shop Simulator.exe" actually present at the configured game path?
+   *
+   * This is the check that catches a wrong game folder BEFORE mods are written
+   * into it. Installing to a folder the game never reads looks like it worked —
+   * files copy fine — but nothing loads in game, which is nearly impossible for
+   * a user to diagnose. Case-insensitive so it behaves the same on Linux.
+   */
+  isGameExePresent(gamePath) {
+    const dir = gamePath || this.gamePath;
+    if (!dir) return false;
+    try {
+      if (fs.existsSync(path.join(dir, GAME_EXE))) return true;
+      // Linux is case-sensitive; match the filename regardless of case.
+      const want = GAME_EXE.toLowerCase();
+      return fs.readdirSync(dir, { withFileTypes: true })
+        .some(e => e.isFile() && e.name.toLowerCase() === want);
+    } catch {
+      return false;
+    }
+  }
+
   getBepInExStatus() {
-    if (!this.gamePath) return { installed: false, reason: 'Game path not set.' };
-    if (!this.isBepInExInstalled()) return { installed: false, reason: 'BepInEx not found. Download it and install with Game Root target.' };
-    return { installed: true };
+    if (!this.gamePath) return { installed: false, gameFound: false, reason: 'Game path not set.' };
+    // Verify the game itself first — a wrong folder makes every later check and
+    // every install meaningless.
+    const gameFound = this.isGameExePresent();
+    if (!gameFound) {
+      return {
+        installed: false,
+        gameFound: false,
+        gameMissing: true,
+        reason: `"${GAME_EXE}" was not found in the selected folder. Point the game location at the folder containing it (for Xbox Game Pass that is the "Content" folder), or mods will install where the game cannot load them.`,
+      };
+    }
+    if (!this.isBepInExInstalled()) return { installed: false, gameFound: true, reason: 'BepInEx not found. Download it and install with Game Root target.' };
+    return { installed: true, gameFound: true };
   }
 
   /** Detailed health check — verifies all critical BepInEx files.
@@ -1762,6 +1799,12 @@ class ModManager {
 
   async installMod(filename, targetKey, modName, skipRemoval = false) {
     if (!this.gamePath) throw new Error('Game path not set');
+    // Verify the game folder is really the game folder BEFORE writing anything.
+    // Installing into a wrong folder appears to succeed — files copy fine — but
+    // nothing ever loads in game, and that is very hard for a user to diagnose.
+    if (!this.isGameExePresent()) {
+      throw new Error(`"${GAME_EXE}" was not found in "${this.gamePath}". Set the game location to the folder containing it (for Xbox Game Pass that is the "Content" folder) before installing mods.`);
+    }
     const archivePath = path.join(this.getStagingPath(), filename);
     if (!fs.existsSync(archivePath)) throw new Error(`Archive not found: ${filename}`);
     if (!TARGETS[targetKey]) throw new Error(`Invalid target: ${targetKey}`);

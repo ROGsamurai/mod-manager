@@ -66,6 +66,19 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
         </div>
       </S>
       <S title={t('BepInEx Status')}>
+        {/* Game executable check — shown first because BepInEx (and every mod)
+            is meaningless if the game folder itself is wrong. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.gameFound ? 'var(--green-bright)' : 'var(--red-bright)' }} />
+          <span style={{ fontSize: 16, fontWeight: 600 }}>
+            {bepinex.gameFound ? t('Game detected ✓') : t('Game not detected')}
+          </span>
+        </div>
+        {!bepinex.gameFound && (
+          <div style={{ fontSize: 14, color: 'var(--red-bright)', lineHeight: 1.7, marginBottom: 12 }}>
+            {t('"Card Shop Simulator.exe" was not found in the selected folder. Mods cannot be installed until the game location is correct.')}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.installed ? 'var(--green-bright)' : 'var(--red-bright)' }} />
           <span style={{ fontSize: 16, fontWeight: 600 }}>{bepinex.installed ? t('Installed ✓') : t('Not Installed')}</span>
