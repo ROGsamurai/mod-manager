@@ -2178,20 +2178,29 @@ class ModManager {
   }
 
   /** Find WinRAR's UnRAR.exe on system */
+  /** Find a RAR-capable helper: UnRAR/WinRAR on Windows, unrar on Linux/macOS */
   _getWinRAR() {
-    const candidates = [
+    const isWin = process.platform === 'win32';
+    const candidates = isWin ? [
       'C:\\Program Files\\WinRAR\\UnRAR.exe',
       'C:\\Program Files (x86)\\WinRAR\\UnRAR.exe',
       'D:\\Program Files\\WinRAR\\UnRAR.exe',
       'C:\\Program Files\\WinRAR\\WinRAR.exe',
+    ] : [
+      // WinRAR itself doesn't exist on Linux/macOS, but RARLAB ships the same
+      // extractor as the `unrar` package (and Homebrew's unrar on macOS).
+      '/usr/bin/unrar', '/usr/local/bin/unrar', '/opt/homebrew/bin/unrar',
+      '/usr/bin/unrar-free', '/usr/local/bin/unrar-free',
     ];
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
     }
     const { execSync } = require('child_process');
     try {
-      const where = execSync('where UnRAR.exe', { windowsHide: true, timeout: 3000 }).toString().trim().split('\n')[0].trim();
-      if (where && fs.existsSync(where)) return where;
+      const cmd = isWin ? 'where UnRAR.exe' : 'command -v unrar || command -v unrar-free';
+      const found = execSync(cmd, { windowsHide: true, timeout: 3000, shell: isWin ? undefined : '/bin/sh' })
+        .toString().trim().split('\n')[0].trim();
+      if (found && fs.existsSync(found)) return found;
     } catch {}
     return null;
   }
@@ -2211,12 +2220,21 @@ class ModManager {
           s.on('error', (err) => rej(new Error(`RAR extraction failed: ${err.message || 'Unknown error'}`)));
         });
       } else {
-        const winrar = this._getWinRAR();
-        if (!winrar) throw new Error('Cannot extract RAR files. Install 7-Zip (https://7-zip.org) or WinRAR, or convert the archive to .zip format.');
+        const unrar = this._getWinRAR();
+        if (!unrar) {
+          throw new Error(process.platform === 'win32'
+            ? 'Cannot extract RAR files. Install 7-Zip (https://7-zip.org) or WinRAR, or ask the mod author for a .zip.'
+            : 'Cannot extract RAR files. Install p7zip or unrar with your package manager (e.g. "sudo pacman -S p7zip" / "sudo apt install p7zip-full unrar"), or convert the archive to .zip. On Steam Deck the system folder is read-only, so converting to .zip is usually easiest.');
+        }
         const { execFile } = require('child_process');
         await new Promise((res, rej) => {
-          const args = winrar.toLowerCase().includes('winrar') ? ['x', '-o+', '-ibck', src, tempDir + '\\'] : ['x', '-o+', '-y', src, tempDir + '\\'];
-          execFile(winrar, args, { windowsHide: true, timeout: 300000 }, (err) => { if (err) rej(new Error(`RAR extraction failed: ${err.message}`)); else res(); });
+          // Trailing separator matters to unrar/WinRAR — it marks the argument as
+          // a destination FOLDER. Must be "\" on Windows and "/" elsewhere.
+          const destArg = tempDir + path.sep;
+          const args = unrar.toLowerCase().includes('winrar')
+            ? ['x', '-o+', '-ibck', src, destArg]
+            : ['x', '-o+', '-y', src, destArg];
+          execFile(unrar, args, { windowsHide: true, timeout: 300000 }, (err) => { if (err) rej(new Error(`RAR extraction failed: ${err.message}`)); else res(); });
         });
       }
       // Windows-packed archives can leave literal-backslash filenames on Linux
