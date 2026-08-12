@@ -1,3 +1,12 @@
+Version 1.1.2
+NEW
+- Linux / Steam Deck support: the manager is now also built as an AppImage. It keeps its staging and disabled-mods folders next to the .AppImage file, the same way the Windows portable build does
+- Auto-detects the game on Linux, including the standard Steam path, Flatpak Steam and microSD cards
+FIXED
+- The Play button now launches the game executable directly from the folder you set for any non-Steam install, on every platform. Only installs under steamapps launch through Steam
+- Fresh Install now also removes version.dll, so pre-configured BepInEx packs that use it as their loader are fully reset. It also finds the BepInEx folder regardless of letter case, which previously made Fresh Install fail on Linux
+- RAR archives can now use unrar or p7zip on Linux/macOS, with a platform-appropriate message when neither is installed
+
 Version 1.1.1
 FIXED
 - Steam Deck / Linux: mods packed on Windows (EnhancedPrefabLoader and its API) extracted as single files with backslashes in their names instead of real folders, so BepInEx never loaded them. Folders are now rebuilt correctly on every platform

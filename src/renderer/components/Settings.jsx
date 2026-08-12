@@ -177,7 +177,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
       </S>
       <S title={t('About')}>
         <div style={{ fontSize: 13, color: 'var(--text-4)', lineHeight: 1.9 }}>
-          TCG Card Shop Mod Manager v1.1.1 — {t('Portable Edition')}<br />
+          TCG Card Shop Mod Manager v1.1.2 — {t('Portable Edition')}<br />
           {t('Local, offline mod manager. No API keys, no accounts, no tracking.')}<br />
           {t('Staging folder lives right next to the .exe')}
         </div>

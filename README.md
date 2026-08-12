@@ -148,8 +148,8 @@ You can also start one by hand: **Actions → Build → Run workflow**.
 Pushing a version tag attaches both builds to a draft GitHub Release:
 
 ```bash
-git tag v1.1.1
-git push origin v1.1.1
+git tag v1.1.2
+git push origin v1.1.2
 ```
 
 ### First-time repository setup

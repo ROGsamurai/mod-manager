@@ -235,22 +235,13 @@ class GameDetector {
 
     if (!gamePath) { launchSteam(); return { success: true, method: 'steam' }; }
 
-    // Decide by whether this is a STEAM install, not by guessing "is it Xbox".
-    // Steam games always live under "steamapps\common" — a reliable signal.
-    // Everything else (Game Pass in ANY folder, or a manual copy) launches the
-    // real executable from the folder the user set.
+    // Rule: a STEAM install launches through Steam; ANYTHING ELSE launches the
+    // executable directly from the folder the user set. Steam games always live
+    // under "steamapps/common", which is the reliable signal — everything else
+    // (Xbox Game Pass in any folder, a manual copy, a non-Steam Linux install)
+    // gets the exe run directly.
     const isSteam = /(^|[\\/])steamapps[\\/]/i.test(gamePath);
     if (isSteam) { launchSteam(); return { success: true, method: 'steam' }; }
-
-    // On Linux/macOS the game is a WINDOWS executable running under Proton/Wine.
-    // Spawning "Card Shop Simulator.exe" directly would either do nothing or
-    // start it outside the Proton prefix (no BepInEx, no saves). Steam has to
-    // launch it, so always use the steam:// protocol there. Xbox Game Pass does
-    // not exist on these platforms, so nothing is lost.
-    if (os.platform() !== 'win32') {
-      launchSteam();
-      return { success: true, method: 'steam', proton: true };
-    }
 
     const candidates = this._resolveLaunchCandidates(gamePath);
     if (candidates.length === 0) {
