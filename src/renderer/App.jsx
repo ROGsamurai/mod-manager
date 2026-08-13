@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { I18nProvider, useI18n } from './i18n';
 import { applyTheme } from './themes';
 import Sidebar from './components/Sidebar';
@@ -36,7 +36,15 @@ function AppInner() {
 
   const changeTheme = (id) => { setThemeId(id); applyTheme(id); window.api.setTheme(id); };
 
-  const notify = useCallback((msg, type = 'info') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3200); }, []);
+  // Keep a handle on the dismiss timer so a rapid burst of notifications can't
+  // have an older timer clear a newer toast (and so it is cancelled on unmount).
+  const toastTimer = useRef(null);
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  const notify = useCallback((msg, type = 'info') => {
+    setToast({ msg, type });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null; }, 3200);
+  }, []);
   const refreshMods = async () => { setMods(await window.api.getInstalledMods()); setConflicts(await window.api.getConflicts()); };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
 

@@ -2249,19 +2249,49 @@ class ModManager {
   }
 
   /** Extract a RAR file using system 7z or WinRAR */
+  /**
+   * Run `7za x` and resolve when extraction finishes, guaranteeing the child
+   * process and its stream are torn down.
+   *
+   * Same hazard as _sevenList: node-7z spawns 7za, which holds an open handle on
+   * the archive. If the stream is abandoned (especially on the error path) the
+   * child can outlive the call, and on Windows that leaked handle makes the .zip
+   * undeletable until the whole app exits. Always reap it.
+   */
+  _sevenExtract(src, destDir, bin, onProgress, errPrefix) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let s;
+      const teardown = () => {
+        try { if (s && s._childProcess && !s._childProcess.killed) s._childProcess.kill(); } catch {}
+        try { if (s && typeof s.destroy === 'function') s.destroy(); } catch {}
+        try { if (s && typeof s.removeAllListeners === 'function') s.removeAllListeners(); } catch {}
+      };
+      const finish = (err) => {
+        if (settled) return;
+        settled = true;
+        teardown();
+        if (err) reject(err); else resolve();
+      };
+      try {
+        s = Seven.extractFull(src, destDir, { $bin: bin, yes: true, $spawnOptions: { windowsHide: true } });
+      } catch (err) {
+        return finish(err);
+      }
+      let done = 0;
+      s.on('data', () => { done++; if (onProgress) onProgress(-1, done, -1); });
+      s.on('end', () => finish(null));
+      s.on('error', (err) => finish(new Error(`${errPrefix}: ${err.message || err.stderr || 'Unknown error'}`)));
+    });
+  }
+
   async _extractRar(src, dest, onProgress) {
     const tempDir = path.join(this.getStagingPath(), '_rar_temp_' + Date.now());
     fs.ensureDirSync(tempDir);
     try {
       const bin7z = this._getSystem7z();
       if (bin7z) {
-        await new Promise((res, rej) => {
-          const s = Seven.extractFull(src, tempDir, { $bin: bin7z, yes: true, $spawnOptions: { windowsHide: true } });
-          let done = 0;
-          s.on('data', () => { done++; if (onProgress) onProgress(-1, done, -1); });
-          s.on('end', res);
-          s.on('error', (err) => rej(new Error(`RAR extraction failed: ${err.message || 'Unknown error'}`)));
-        });
+        await this._sevenExtract(src, tempDir, bin7z, onProgress, 'RAR extraction failed');
       } else {
         const unrar = this._getWinRAR();
         if (!unrar) {
@@ -2469,19 +2499,8 @@ class ModManager {
     const tempDir = path.join(this.getStagingPath(), '_7z_temp_' + Date.now());
     fs.ensureDirSync(tempDir);
     try {
-      await new Promise((res, rej) => {
-        const s = Seven.extractFull(src, tempDir, {
-          $bin: this._get7zBin(),
-          yes: true,
-          $spawnOptions: { windowsHide: true },
-        });
-        let done = 0;
-        s.on('data', () => { done++; if (onProgress) onProgress(-1, done, -1); });
-        s.on('end', res);
-        s.on('error', (err) => {
-          rej(new Error(`Extraction failed: ${err.message || err.stderr || 'Unknown error'}. Make sure the archive is not corrupted.`));
-        });
-      });
+      await this._sevenExtract(src, tempDir, this._get7zBin(), onProgress,
+        'Extraction failed');
       // Windows-packed archives can leave literal-backslash filenames on Linux
       // (Steam Deck) — rebuild real folders before merging.
       this._explodeBackslashEntries(tempDir);
