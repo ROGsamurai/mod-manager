@@ -45,7 +45,7 @@ export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, o
             {lightThemes.map(th=><option key={th.id} value={th.id}>{th.name}</option>)}
           </optgroup>
         </select>
-        <div style={{fontSize:12,color:'var(--text-4)',fontFamily:'var(--mono)',marginTop:8,textAlign:'center'}}>v1.1.2</div>
+        <div style={{fontSize:12,color:'var(--text-4)',fontFamily:'var(--mono)',marginTop:8,textAlign:'center'}}>v1.1.3</div>
       </div>
     </aside>
   );
