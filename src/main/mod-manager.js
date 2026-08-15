@@ -919,6 +919,9 @@ class ModManager {
     }
     // Clean up any stale temp folders left behind by crashes
     this._cleanStaleTempFolders();
+    // Stage the private 7za copy now, while the portable unpack dir is still
+    // guaranteed to exist, rather than on first archive operation.
+    try { this._get7zBin(true); } catch { /* non-fatal — resolved lazily later */ }
   }
 
   /** Remove leftover temp extraction folders from previous crashes.
@@ -1503,6 +1506,10 @@ class ModManager {
    * works after I close the manager" symptom. Always reap the child.
    */
   _sevenList(archivePath, bin) {
+    return this._run7z(bin, b => this._sevenListOnce(archivePath, b));
+  }
+
+  _sevenListOnce(archivePath, bin) {
     return new Promise((resolve, reject) => {
       const entries = [];
       let settled = false;
@@ -1519,7 +1526,7 @@ class ModManager {
         if (err) reject(err); else resolve(val);
       };
       try {
-        s = Seven.list(archivePath, { $bin: bin || this._get7zBin() });
+        s = Seven.list(archivePath, { $bin: bin });
       } catch (err) {
         return finish(err);
       }
@@ -2162,24 +2169,152 @@ class ModManager {
       .replace(/^BepInEx\/Core\//i, 'BepInEx/core/');
   }
 
-  /** Resolve 7za binary path — handle ASAR unpacked paths in packaged app */
-  _get7zBin() {
+  /**
+   * Absolute path of the 7za binary that ships inside the app bundle.
+   *
+   * In the packaged app this lives under `app.asar.unpacked`. For the Windows
+   * PORTABLE build that resolves to
+   * `%TEMP%\Real-TCG-Overhaul-Mod-Manager\resources\app.asar.unpacked\...`,
+   * because the portable stub unpacks the whole app into %TEMP% on every launch
+   * and runs it from there.
+   *
+   * That folder is fair game for Windows Storage Sense, Disk Cleanup, "clean my
+   * temp files" utilities and antivirus. When it is wiped while the manager is
+   * STILL RUNNING, the .asar itself survives (Electron holds it open, so Windows
+   * refuses to delete it) but 7za.exe is only touched at spawn time — so every
+   * archive operation suddenly fails with `spawn ...7za.exe ENOENT` and keeps
+   * failing until the app is restarted and unpacks itself again.
+   *
+   * Never spawn this path directly; go through _get7zBin().
+   */
+  _bundled7zPath() {
     let p = sevenBin.path7za;
     if (p.includes('app.asar')) p = p.replace('app.asar', 'app.asar.unpacked');
-    // On Linux/macOS the bundled 7za must carry the executable bit. It is often
-    // lost when the app is packaged (or unpacked from an archive that doesn't
-    // preserve POSIX modes), and the result is a bare "spawn ... EACCES" that
-    // breaks every archive operation. Restore it once, cheaply.
-    if (process.platform !== 'win32' && !this._7zChmodDone) {
-      this._7zChmodDone = true;
+    return p;
+  }
+
+  /** Writable, NON-temporary folders the private 7za copy can live in, best first. */
+  _stable7zDirs() {
+    const dirs = [];
+    try {
+      const ud = require('electron').app?.getPath('userData');
+      if (ud) dirs.push(path.join(ud, 'bin'));
+    } catch { /* not running under Electron (test harness) */ }
+    if (this.portablePath) dirs.push(path.join(this.portablePath, 'bin'));
+    return dirs;
+  }
+
+  /**
+   * On Linux/macOS the bundled 7za must carry the executable bit. It is often
+   * lost when the app is packaged (or unpacked from an archive that doesn't
+   * preserve POSIX modes), and the result is a bare "spawn ... EACCES" that
+   * breaks every archive operation. Restore it cheaply.
+   */
+  _makeExecutable(p) {
+    if (process.platform === 'win32') return;
+    try {
+      const mode = fs.statSync(p).mode;
+      if (!(mode & 0o111)) fs.chmodSync(p, 0o755);
+    } catch (err) {
+      console.warn('[7z] could not set executable bit:', err.code || err.message);
+    }
+  }
+
+  /**
+   * Resolve the 7za binary to use, keeping a private copy OUTSIDE the volatile
+   * unpack directory (see _bundled7zPath). The copy sits next to the settings
+   * DB (userData), which nothing but this app ever touches, so archive
+   * operations keep working for the whole session even if %TEMP% is emptied
+   * underneath us.
+   *
+   * Pass force=true to re-provision after a spawn failed with ENOENT/EACCES.
+   */
+  _get7zBin(force = false) {
+    if (!force && this._7zBinPath && fs.existsSync(this._7zBinPath)) return this._7zBinPath;
+    this._7zBinPath = null;
+
+    const src = this._bundled7zPath();
+    const name = path.basename(src);
+    let srcStat = null;
+    try { srcStat = fs.statSync(src); } catch { /* unpack dir was cleaned */ }
+
+    for (const dir of this._stable7zDirs()) {
+      const dst = path.join(dir, name);
       try {
-        const mode = fs.statSync(p).mode;
-        if (!(mode & 0o111)) fs.chmodSync(p, 0o755);
+        let ok = fs.existsSync(dst);
+        // (Re)copy when the private copy is missing, truncated, or from an older build.
+        if (srcStat && (!ok || fs.statSync(dst).size !== srcStat.size)) {
+          fs.ensureDirSync(dir);
+          fs.copyFileSync(src, dst);
+          ok = true;
+        }
+        if (ok) {
+          this._makeExecutable(dst);
+          this._7zBinPath = dst;
+          return dst;
+        }
       } catch (err) {
-        console.warn('[7z] could not set executable bit:', err.code || err.message);
+        console.warn('[7z] could not stage binary in', dir, '-', err.code || err.message);
       }
     }
-    return p;
+
+    // No writable home for the copy — fall back to the bundled binary itself.
+    if (srcStat) {
+      this._makeExecutable(src);
+      this._7zBinPath = src;
+      return src;
+    }
+    // Bundled binary gone AND no copy survived: a full 7-Zip install, if the
+    // user has one, does everything 7za does.
+    const sys = this._getSystem7z();
+    if (sys) {
+      this._7zBinPath = sys;
+      return sys;
+    }
+    return src; // let the spawn fail, with a decorated message
+  }
+
+  /** True when a 7za failure means "the binary isn't there / can't be run". */
+  _is7zMissingError(err) {
+    const s = `${err?.code || ''} ${err?.message || ''} ${err?.stderr || ''}`;
+    return /ENOENT|EACCES|EPERM|not recognized|No such file/i.test(s);
+  }
+
+  /** Replace a raw `spawn ... ENOENT` with something the user can act on. */
+  _decorate7zError(err, bin) {
+    if (!this._is7zMissingError(err)) return err;
+    const e = new Error(
+      `Could not run the bundled 7-Zip helper (${bin}). ` +
+      (process.platform === 'win32'
+        ? 'Antivirus most likely quarantined 7za.exe, or a temp-file cleaner removed the app’s unpacked files. Add the Mod Manager to your antivirus exclusions, or install 7-Zip (https://7-zip.org), then restart the manager.'
+        : 'Install p7zip with your package manager (e.g. "sudo apt install p7zip-full") and restart the manager.')
+    );
+    e.code = err?.code;
+    return e;
+  }
+
+  /**
+   * Run a 7za-backed operation. If the binary turns out to have vanished
+   * mid-session (temp cleanup / AV quarantine), re-provision it and retry ONCE
+   * instead of surfacing "spawn ...7za.exe ENOENT" and forcing an app restart.
+   *
+   * An explicitly supplied bin (system 7z / WinRAR paths) is used as-is.
+   */
+  async _run7z(bin, run) {
+    const explicit = !!bin;
+    const first = bin || this._get7zBin();
+    try {
+      return await run(first);
+    } catch (err) {
+      if (explicit || !this._is7zMissingError(err)) throw err;
+      const fresh = this._get7zBin(true);
+      if (!fresh || (fresh === first && !fs.existsSync(fresh))) throw this._decorate7zError(err, first);
+      try {
+        return await run(fresh);
+      } catch (err2) {
+        throw this._decorate7zError(err2, fresh);
+      }
+    }
   }
 
   /** Find full 7z on system (supports RAR, unlike 7za) */
@@ -2259,6 +2394,10 @@ class ModManager {
    * undeletable until the whole app exits. Always reap it.
    */
   _sevenExtract(src, destDir, bin, onProgress, errPrefix) {
+    return this._run7z(bin, b => this._sevenExtractOnce(src, destDir, b, onProgress, errPrefix));
+  }
+
+  _sevenExtractOnce(src, destDir, bin, onProgress, errPrefix) {
     return new Promise((resolve, reject) => {
       let settled = false;
       let s;
@@ -2499,7 +2638,9 @@ class ModManager {
     const tempDir = path.join(this.getStagingPath(), '_7z_temp_' + Date.now());
     fs.ensureDirSync(tempDir);
     try {
-      await this._sevenExtract(src, tempDir, this._get7zBin(), onProgress,
+      // Deliberately pass no $bin: _sevenExtract resolves it, so if the bundled
+      // 7za went missing mid-session it is re-provisioned and retried once.
+      await this._sevenExtract(src, tempDir, null, onProgress,
         'Extraction failed');
       // Windows-packed archives can leave literal-backslash filenames on Linux
       // (Steam Deck) — rebuild real folders before merging.
