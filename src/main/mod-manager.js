@@ -3143,24 +3143,19 @@ class ModManager {
   }
 
   /**
-   * The destination to SHOW for a mod, which is not always mod.targetKey.
+   * The destination to SHOW for a mod. This must be the SAME answer the
+   * Downloaded Mods row gives, which is _detectTarget's verdict on the archive
+   * — recorded as installTarget at install time.
    *
-   * install rewrites targetKey to 'game_root' for plugins/patchers/config
-   * installs so every tracked path is gamePath-relative and cross-mod reference
-   * counting can compare them. That is bookkeeping, not where the files went.
-   * Prefer the recorded installTarget; for entries written before it existed,
-   * infer it from the tracked paths themselves.
+   * Do NOT infer it from the tracked file paths: install rewrites those to
+   * gamePath-relative form, so a plugins install and a game_root install both
+   * end up looking like "BepInEx/plugins/...", and guessing from them relabels
+   * game_root mods (Grading Overhaul, Phone Overhaul, content packs) as
+   * plugins. Entries from before installTarget existed keep their stored
+   * targetKey and correct themselves on the next install.
    */
   _displayTargetKey(mod) {
     if (mod.installTarget && TARGETS[mod.installTarget]) return mod.installTarget;
-    const files = (Array.isArray(mod.files) ? mod.files : []).filter(Boolean).map(f => f.replace(/\\/g, '/').toLowerCase());
-    if (files.length > 0) {
-      const allUnder = (prefix) => files.every(f => f.startsWith(prefix));
-      if (allUnder('bepinex/plugins/')) return 'plugins';
-      if (allUnder('bepinex/patchers/')) return 'patchers';
-      if (allUnder('bepinex/config/')) return 'config';
-      if (allUnder('bepinex/')) return 'bepinex';
-    }
     return TARGETS[mod.targetKey] ? mod.targetKey : 'game_root';
   }
 
