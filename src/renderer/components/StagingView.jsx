@@ -7,6 +7,15 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   const { t, tMod } = useI18n();
   const [targets, setTargets] = useState([]);
   const [sels, setSels] = useState({});
+  // Archive contents used to render only the first 60 entries inside a 180px box,
+  // so a 229-entry mod could not be scrolled past entry 60 — the rest simply were
+  // not in the DOM. The list is virtualized instead: every entry is reachable, and
+  // a 5000-file expansion pack stays responsive because only the visible slice is
+  // rendered. Fixed row height is what makes the offset maths work.
+  const CONTENTS_ROW_H = 22;
+  const CONTENTS_VIEW_H = 320;
+  const CONTENTS_OVERSCAN = 6;
+  const [previewScroll, setPreviewScroll] = useState(0);
   const [names, setNames] = useState({});
   const [analyzed, setAnalyzed] = useState(new Set());
   const [peek, setPeek] = useState(null);
@@ -81,6 +90,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   const doPeek = async filename => {
     if (peek === filename) { setPeek(null); setPreview(null); return; }
     setPeek(filename);
+    setPreviewScroll(0);
     const r = await window.api.peekArchive(filename);
     if (r.success) { setPreview(r); if (r.suggestedTarget) setSels(p => ({ ...p, [filename]: r.suggestedTarget })); }
     else { notify(`Could not peek: ${r.error}`, 'error'); setPreview(null); }
@@ -287,14 +297,41 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                         ))}
                       </div>
                     )}
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 }}>{t('Contents')} ({preview.entries?.length || 0} {t('files')})</div>
-                    <div style={{ maxHeight: 180, overflow: 'auto', fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text-3)', lineHeight: 1.7 }}>
-                      {preview.entries?.slice(0, 60).map((e, i) => (
-                        <div key={i} style={{ color: e.path.endsWith('.dll') ? 'var(--green-bright)' : e.path.startsWith('BepInEx/') ? 'var(--accent)' : 'var(--text-4)' }}>
-                          {e.isDir ? '📁' : '  '} {e.path}{e.size > 0 && !e.isDir && <span style={{ color: 'var(--text-4)', marginLeft: 8 }}>{fmt(e.size)}</span>}
-                        </div>
-                      ))}
-                    </div>
+                    {(() => {
+                      const entries = preview.entries || [];
+                      // Count FILES, not entries: the security scanner reports
+                      // non-directory entries, so counting folders here made the
+                      // two numbers disagree ("156 scanned" vs "229 files").
+                      const fileCount = entries.filter(e => !e.isDir).length;
+                      const folderCount = entries.length - fileCount;
+                      const total = entries.length;
+                      const start = Math.max(0, Math.floor(previewScroll / CONTENTS_ROW_H) - CONTENTS_OVERSCAN);
+                      const end = Math.min(total, Math.ceil((previewScroll + CONTENTS_VIEW_H) / CONTENTS_ROW_H) + CONTENTS_OVERSCAN);
+                      return (
+                        <>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 }}>
+                            {t('Contents')} ({fileCount} {t('files')}{folderCount > 0 ? `, ${folderCount} ${t('folders')}` : ''})
+                          </div>
+                          <div
+                            onScroll={e => setPreviewScroll(e.currentTarget.scrollTop)}
+                            style={{ height: Math.min(CONTENTS_VIEW_H, Math.max(CONTENTS_ROW_H, total * CONTENTS_ROW_H)), overflow: 'auto',
+                              fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text-3)' }}>
+                            <div style={{ height: total * CONTENTS_ROW_H, position: 'relative' }}>
+                              {entries.slice(start, end).map((e, i) => {
+                                const idx = start + i;
+                                return (
+                                  <div key={idx} title={e.path} style={{ position: 'absolute', top: idx * CONTENTS_ROW_H, left: 0, right: 0,
+                                    height: CONTENTS_ROW_H, lineHeight: `${CONTENTS_ROW_H}px`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                    color: e.path.endsWith('.dll') ? 'var(--green-bright)' : e.path.startsWith('BepInEx/') ? 'var(--accent)' : 'var(--text-4)' }}>
+                                    {e.isDir ? '📁' : '  '} {e.path}{e.size > 0 && !e.isDir && <span style={{ color: 'var(--text-4)', marginLeft: 8 }}>{fmt(e.size)}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
