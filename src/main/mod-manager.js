@@ -2129,6 +2129,12 @@ class ModManager {
     // config) currently store extractTo-relative paths — prefix them with the
     // target's relative path so everything speaks the same coordinate system,
     // then switch targetKey to bepinex semantics for the same reason.
+    // Where the files really went, kept for display. The block below rewrites
+    // targetKey to 'game_root' for path bookkeeping only, which made the
+    // Installed Mods list report "Game Root Folder" for a mod that went to
+    // BepInEx/plugins — the install row and the installed row disagreed.
+    const installTarget = targetKey;
+
     if (!scatterInstall && files.length > 0) {
       const targetRel = TARGETS[targetKey].relative.replace(/\\/g, '/');
       if (targetRel && targetRel !== '.') {
@@ -2147,7 +2153,7 @@ class ModManager {
     }
 
     const hasPrefabloader = files.some(f => f.toLowerCase().includes('_prefabloader'));
-    const mod = { id, name, version, filename, targetKey, targetLabel: TARGETS[targetKey].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
+    const mod = { id, name, version, filename, targetKey, installTarget, targetLabel: TARGETS[installTarget].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
     this.mods.set(id, mod);
     this._saveDb();
     this._autoAssignGroupByName(id, name, files);
@@ -3136,7 +3142,35 @@ class ModManager {
     if (this.getActiveProfileId() === id) store.set('activeProfileId', null);
   }
 
-  getInstalledMods() { return Array.from(this.mods.values()); }
+  /**
+   * The destination to SHOW for a mod, which is not always mod.targetKey.
+   *
+   * install rewrites targetKey to 'game_root' for plugins/patchers/config
+   * installs so every tracked path is gamePath-relative and cross-mod reference
+   * counting can compare them. That is bookkeeping, not where the files went.
+   * Prefer the recorded installTarget; for entries written before it existed,
+   * infer it from the tracked paths themselves.
+   */
+  _displayTargetKey(mod) {
+    if (mod.installTarget && TARGETS[mod.installTarget]) return mod.installTarget;
+    const files = (Array.isArray(mod.files) ? mod.files : []).filter(Boolean).map(f => f.replace(/\\/g, '/').toLowerCase());
+    if (files.length > 0) {
+      const allUnder = (prefix) => files.every(f => f.startsWith(prefix));
+      if (allUnder('bepinex/plugins/')) return 'plugins';
+      if (allUnder('bepinex/patchers/')) return 'patchers';
+      if (allUnder('bepinex/config/')) return 'config';
+      if (allUnder('bepinex/')) return 'bepinex';
+    }
+    return TARGETS[mod.targetKey] ? mod.targetKey : 'game_root';
+  }
+
+  /** Returns COPIES: targetLabel is corrected for display without touching the DB. */
+  getInstalledMods() {
+    return Array.from(this.mods.values()).map(m => ({
+      ...m,
+      targetLabel: TARGETS[this._displayTargetKey(m)].label,
+    }));
+  }
 
   async freshInstall() {
     if (!this.gamePath) throw new Error('Game path not set');
