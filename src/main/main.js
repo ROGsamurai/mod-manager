@@ -240,9 +240,11 @@ ipcMain.handle('targets:list', () => { try { return modManager.getTargets(); } c
 
 // Mods
 // Send extraction progress to renderer
-modManager.onProgress = (percent, done, total) => {
+modManager.onProgress = (percent, done, total, phase) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('install-progress', { percent, done, total });
+    // phase: 'removing' while the previous version's files are deleted,
+    // 'installing' while the new archive is extracted.
+    mainWindow.webContents.send('install-progress', { percent, done, total, phase: phase || 'installing' });
   }
 };
 

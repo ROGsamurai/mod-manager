@@ -1928,13 +1928,21 @@ class ModManager {
     // It also clears any leftover disabled-mods copy, which the old path
     // orphaned on disk.
     const baseKey = this._baseName(name);
+    let removedOldFiles = 0;
+    let previousWasUntracked = false;
     for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
       if (m.filename === filename || mBase === baseKey) {
         try {
-          await this.uninstallMod(oldId, (done, total) => {
-            if (this.onProgress) this.onProgress(-1, done, total);
+          // Report as its own phase so the UI can show "Removing old version"
+          // instead of a progress bar that just says "Installing" throughout —
+          // otherwise the removal is invisible and looks like it never ran.
+          const res = await this.uninstallMod(oldId, (done, total) => {
+            if (this.onProgress) this.onProgress(-1, done, total, 'removing');
           });
+          removedOldFiles += res?.removed || 0;
+          if (!res?.tracked) previousWasUntracked = true;
+          console.log(`[install] "${m.name}": removed ${res?.removed || 0} of ${res?.tracked || 0} tracked files before extracting`);
         } catch (err) {
           // Never let cleanup block the install — drop the stale DB entry and
           // carry on; the extraction below overwrites what is still there.
@@ -2140,7 +2148,9 @@ class ModManager {
       if (fs.existsSync(zipPath)) fs.removeSync(zipPath);
     }
 
-    return mod;
+    // Returned as a COPY: removedOldFiles/previousWasUntracked are reporting
+    // fields for this install only and must not end up persisted in the DB.
+    return { ...mod, removedOldFiles, previousWasUntracked };
   }
 
   getDeleteAfterInstall() { return store.get('deleteAfterInstall', false); }
@@ -2809,9 +2819,19 @@ class ModManager {
     // Protected paths that must NEVER be deleted
     const protectedNames = ['bepinex', 'plugins', 'patchers', 'config', 'core'];
 
+    // Count what actually leaves the disk, so callers (and the user) can tell a
+    // real removal apart from a no-op. Watching the game folder can't: when the
+    // new version ships the same filenames, the files are deleted and recreated
+    // at the same paths within the same second, which looks like an overwrite.
+    let removed = 0;
+
     if (isScatter) {
       const base = mod.targetKey === 'game_root' ? this.gamePath : path.join(this.gamePath, 'BepInEx');
-      for (const f of mod.files) {
+      // Untracked scatter entry (imported before file tracking existed): there is
+      // no safe file list to delete from, and `base` is the game folder itself,
+      // so wiping it wholesale is never an option. Report 0 instead of throwing
+      // on `for (const f of undefined)`, which used to abort the whole uninstall.
+      for (const f of (Array.isArray(mod.files) ? mod.files : [])) {
         tick();
         if (!f || f === '.' || f === '/') continue;
         // Never delete config files
@@ -2829,6 +2849,7 @@ class ModManager {
         // Safety: only delete FILES, never directories
         if (fs.existsSync(full) && fs.statSync(full).isFile()) {
           await fs.remove(full);
+          removed++;
         }
       }
       this._cleanEmpty(base);
@@ -2839,7 +2860,7 @@ class ModManager {
           tick();
           if (claimedByOthers.has(this._canonicalFileKey(mod, f))) continue;
           const full = path.join(mod.extractTo, f);
-          if (fs.existsSync(full) && fs.statSync(full).isFile()) await fs.remove(full);
+          if (fs.existsSync(full) && fs.statSync(full).isFile()) { await fs.remove(full); removed++; }
         }
       } else if (mod.files && mod.files.length > 0) {
         // Delete only the files this mod installed, not the entire folder
@@ -2847,7 +2868,7 @@ class ModManager {
           tick();
           if (claimedByOthers.has(this._canonicalFileKey(mod, f))) continue;
           const full = path.join(mod.extractTo, f);
-          if (fs.existsSync(full) && fs.statSync(full).isFile()) await fs.remove(full);
+          if (fs.existsSync(full) && fs.statSync(full).isFile()) { await fs.remove(full); removed++; }
         }
         // Clean up empty directories left behind
         if (mod.extractTo && fs.existsSync(mod.extractTo)) {
@@ -2866,7 +2887,7 @@ class ModManager {
     // time the mod was disabled and re-enabled.
     await this._removeDisabledCopy(mod);
     this.mods.delete(modId); this._saveDb();
-    return { success: true };
+    return { success: true, removed, tracked: Array.isArray(mod.files) ? mod.files.length : 0 };
   }
 
   async toggleMod(modId, onProgress) {

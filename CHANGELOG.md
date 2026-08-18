@@ -5,6 +5,8 @@ NEW
 FIXED
 - "spawn ...7za.exe ENOENT" no longer happens after the app has been open for a while. The portable build unpacks itself into your Temp folder, and Windows cleanup tools and antivirus were deleting the 7-Zip helper out from under it while it ran. The helper is now kept in the app's own settings folder, and is restored and retried automatically if it ever goes missing — no more restarting the manager
 - If the 7-Zip helper genuinely can't be run, the error now explains what to do instead of showing a raw spawn error
+- The install progress bar now shows a separate "Removing old version" step before "Installing", and the success message reports how many old files were deleted, so a real removal is distinguishable from an overwrite
+- Updating a mod that was imported before file tracking existed (no tracked file list) aborted its cleanup silently. It now completes the install and reports that the old copy had nothing tracked to remove
 - Uninstalling or updating a mod that was disabled left its old files behind in disabled-mods. They are now removed for every kind of mod, so an old version can never reappear when you re-enable it
 
 Version 1.1.2

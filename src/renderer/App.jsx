@@ -122,7 +122,14 @@ function AppInner() {
     const r = await window.api.installMod(filename, targetKey, modName, skipRemoval);
     setInstalling(null);
     setInstallProgress(null);
-    if (r.success) { notify(`${t('Install')}: "${r.mod.name}" → ${r.mod.targetLabel}`, 'success'); await refreshMods(); await refreshStaged(); setBepinex(await window.api.getBepInExStatus()); }
+    if (r.success) {
+      // Say how many old files were deleted before extracting. Watching the game
+      // folder can't tell a removal from an overwrite when the new version ships
+      // the same filenames, so the count is the only honest signal.
+      const removedNote = r.mod.removedOldFiles > 0 ? ` — ${r.mod.removedOldFiles} ${t('old files removed')}` : '';
+      notify(`${t('Install')}: "${r.mod.name}" → ${r.mod.targetLabel}${removedNote}`, 'success');
+      await refreshMods(); await refreshStaged(); setBepinex(await window.api.getBepInExStatus());
+    }
     else if (r.blocked) { notify(`🛑 ${r.error}`, 'error'); }
     else notify(r.error, 'error');
   };

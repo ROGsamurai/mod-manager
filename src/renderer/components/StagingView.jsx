@@ -238,7 +238,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                   <div style={{ padding: '8px 16px 12px 16px', background: 'var(--bg-elevated)', borderRadius: '0 0 var(--radius) var(--radius)',
                     borderTop: 'none', marginTop: -1, border: '1px solid var(--border)', borderTopColor: 'transparent' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12, color: 'var(--text-3)' }}>
-                      <span>📦 {t('Installing')}...</span>
+                      <span>{installProgress.phase === 'removing' ? `🧹 ${t('Removing old version')}...` : `📦 ${t('Installing')}...`}</span>
                       <span>{installProgress.percent >= 0 ? `${installProgress.percent}%` : `${installProgress.done} ${t('files')}`}{installProgress.total > 0 ? ` (${installProgress.done}/${installProgress.total})` : ''}</span>
                     </div>
                     <div style={{ width: '100%', height: 6, background: 'var(--bg-base)', borderRadius: 3, overflow: 'hidden' }}>
