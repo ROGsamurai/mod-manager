@@ -78,13 +78,15 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
     if (r.success) { setPreview(r); if (r.suggestedTarget) setSels(p => ({ ...p, [filename]: r.suggestedTarget })); }
     else { notify(`Could not peek: ${r.error}`, 'error'); setPreview(null); }
   };
-  const doInstall = async (filename, skipRemoval = false) => {
-    await onInstall(filename, sels[filename] || 'plugins', names[filename] || filename.replace(/\.(zip|rar|7z)$/i, ''), skipRemoval);
+  // Install / update / downgrade all take the same path now: the backend always
+  // removes the previously installed copy's files before extracting the new one.
+  const doInstall = async (filename) => {
+    await onInstall(filename, sels[filename] || 'plugins', names[filename] || filename.replace(/\.(zip|rar|7z)$/i, ''));
     setPeek(null); setPreview(null);
   };
   const [bulkAction, setBulkAction] = useState(null); // 'installNew' | 'updateAll'
-  const doInstallNew = async () => { setBulkAction('installNew'); try { for (const f of staged) { if (f.status === 'new') await doInstall(f.filename, true); } } finally { setBulkAction(null); } };
-  const doUpdateAll = async () => { setBulkAction('updateAll'); try { for (const f of staged) { if (f.status === 'update') await doInstall(f.filename, true); } } finally { setBulkAction(null); } };
+  const doInstallNew = async () => { setBulkAction('installNew'); try { for (const f of staged) { if (f.status === 'new') await doInstall(f.filename); } } finally { setBulkAction(null); } };
+  const doUpdateAll = async () => { setBulkAction('updateAll'); try { for (const f of staged) { if (f.status === 'update') await doInstall(f.filename); } } finally { setBulkAction(null); } };
   const isBusy = !!bulkAction || !!installing;
 
   const [confirmClear, setConfirmClear] = useState(false);
@@ -196,11 +198,11 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                     )}
                     <button className="btn btn-ghost btn-sm" onClick={() => doPeek(f.filename)}>{peek === f.filename ? '▲' : '▼'}</button>
                     {f.olderVersions?.length > 0 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => doInstall(f.olderVersions[0].filename, false)} disabled={isBusy || !gameFound} style={{ color: '#c0392b', borderColor: '#c0392b44' }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => doInstall(f.olderVersions[0].filename)} disabled={isBusy || !gameFound} style={{ color: '#c0392b', borderColor: '#c0392b44' }}>
                         ⬇️ {t('Downgrade')}
                       </button>
                     )}
-                    <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename, f.status === 'new' || f.status === 'update')} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
+                    <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename)} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
                       {installing === f.filename ? '⏳' : f.status === 'update' ? '⬆️' : f.status === 'reinstall' ? '🔄' : '📥'}
                       {' '}{f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
                     </button>

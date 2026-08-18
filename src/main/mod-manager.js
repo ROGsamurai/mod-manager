@@ -1804,6 +1804,14 @@ class ModManager {
     return { found: false, prefix: '' };
   }
 
+  /**
+   * Install a staged archive.
+   *
+   * `skipRemoval` is retained for IPC compatibility but is no longer honoured:
+   * an existing copy of the same mod is always removed before the new archive
+   * is extracted (see the removal loop below). Overwriting in place left stale
+   * files from the previous version behind.
+   */
   async installMod(filename, targetKey, modName, skipRemoval = false) {
     if (!this.gamePath) throw new Error('Game path not set');
     // Verify the game folder is really the game folder BEFORE writing anything.
@@ -1904,17 +1912,35 @@ class ModManager {
 
     const target = TARGETS[targetKey];
 
-    // Handle old versions: always remove DB entry, only delete files if not skipping removal
+    // Handle an existing copy of this mod: ALWAYS remove its files first, then
+    // extract the new archive into a clean folder.
+    //
+    // This used to keep the old files and just overwrite them (skipRemoval),
+    // which leaves stale files behind whenever a new version renames, splits or
+    // drops a file: the old .dll/.png stays on disk forever, BepInEx may load
+    // both, and mods misbehave in ways the user can only fix by hand. Removing
+    // first makes the installed copy exactly what the new archive contains.
+    //
+    // Safe by construction — uninstallMod only deletes files this mod's own
+    // archive was catalogued as owning, never directories, never files another
+    // tracked mod also claims (reference counting), and never BepInEx configs,
+    // so user settings and files dropped into a mod folder by hand survive.
+    // It also clears any leftover disabled-mods copy, which the old path
+    // orphaned on disk.
     const baseKey = this._baseName(name);
-    for (const [id, m] of this.mods) {
+    for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
       if (m.filename === filename || mBase === baseKey) {
-        if (skipRemoval) {
-          // Just remove the database entry, keep files on disk (they'll be overwritten)
-          this.mods.delete(id);
+        try {
+          await this.uninstallMod(oldId, (done, total) => {
+            if (this.onProgress) this.onProgress(-1, done, total);
+          });
+        } catch (err) {
+          // Never let cleanup block the install — drop the stale DB entry and
+          // carry on; the extraction below overwrites what is still there.
+          console.warn('[install] could not fully remove previous version:', err.message);
+          this.mods.delete(oldId);
           this._saveDb();
-        } else {
-          await this.uninstallMod(id);
         }
       }
     }
@@ -2695,6 +2721,57 @@ class ModManager {
     return files.map(f => String(f).replace(/\\/g, '/')).filter(Boolean);
   }
 
+  /**
+   * Delete this mod's copy inside disabled-mods, whatever shape it was stored in.
+   *
+   * toggleMod names the folder `_sanitize(mod.name)`, but the old uninstall
+   * cleanup looked for `basename(extractTo)` and only ran for non-scatter mods.
+   * The two disagree whenever the folder name differs from the sanitized mod
+   * name ("Big Mod" → "Big_Mod", renamed mods), and scatter mods (game_root /
+   * bepinex) were never cleaned at all — so uninstalling or updating a disabled
+   * mod orphaned its files. Check both names and both layouts.
+   *
+   * Only files this mod tracks are touched; shared files are never moved into
+   * disabled-mods in the first place (reference counting in toggleMod), so
+   * nothing another mod needs can be here.
+   */
+  async _removeDisabledCopy(mod) {
+    const root = this._getDisabledPath();
+    if (!root || !fs.existsSync(root)) return;
+    const files = Array.isArray(mod.files) ? mod.files : [];
+    const dirNames = new Set();
+    if (mod.name) dirNames.add(this._sanitize(mod.name));
+    if (mod.extractTo) dirNames.add(path.basename(mod.extractTo));
+
+    for (const dirName of dirNames) {
+      if (!dirName) continue;
+      const disDir = path.join(root, dirName);
+      if (!fs.existsSync(disDir)) continue;
+      if (files.length === 0) {
+        // No tracked files (legacy entry) — the whole folder was the mod.
+        try { await fs.remove(disDir); } catch {}
+        continue;
+      }
+      for (const f of files) {
+        if (!f || f === '.' || f === '/') continue;
+        const full = path.join(disDir, f);
+        try { if (fs.existsSync(full) && fs.statSync(full).isFile()) await fs.remove(full); } catch {}
+      }
+      this._cleanEmpty(disDir);
+      try { if (fs.readdirSync(disDir).length === 0) fs.rmdirSync(disDir); } catch {}
+    }
+
+    // Loose-DLL mods mirror their files at the disabled-mods root, not in a subfolder.
+    if (mod.looseDlls) {
+      for (const f of files) {
+        if (!f || f === '.' || f === '/') continue;
+        const full = path.join(root, f);
+        try { if (fs.existsSync(full) && fs.statSync(full).isFile()) await fs.remove(full); } catch {}
+      }
+      this._cleanEmpty(root);
+    }
+  }
+
   async uninstallMod(modId, onProgress) {
     const mod = this.mods.get(modId);
     if (!mod) throw new Error(`Mod not found: ${modId}`);
@@ -2782,25 +2859,12 @@ class ModManager {
         // Fallback for old mods without file tracking
         if (mod.extractTo && fs.existsSync(mod.extractTo)) await fs.remove(mod.extractTo);
       }
-      // Clean up disabled copies
-      const dis = path.join(this._getDisabledPath(), path.basename(mod.extractTo));
-      if (mod.looseDlls) {
-        for (const f of mod.files) {
-          const full = path.join(this._getDisabledPath(), f);
-          if (fs.existsSync(full)) await fs.remove(full);
-        }
-      } else if (mod.files && mod.files.length > 0) {
-        const disDir = path.join(this._getDisabledPath(), path.basename(mod.extractTo));
-        if (fs.existsSync(disDir)) {
-          for (const f of mod.files) {
-            const full = path.join(disDir, f);
-            if (fs.existsSync(full)) await fs.remove(full);
-          }
-          this._cleanEmpty(disDir);
-          try { if (fs.readdirSync(disDir).length === 0) fs.rmdirSync(disDir); } catch {}
-        }
-      } else if (fs.existsSync(dis)) await fs.remove(dis);
     }
+    // Remove any disabled-mods copy too, for EVERY install shape. Missing this
+    // left the old version's files sitting in disabled-mods, and since updates
+    // now uninstall before installing, that stale copy would come back the next
+    // time the mod was disabled and re-enabled.
+    await this._removeDisabledCopy(mod);
     this.mods.delete(modId); this._saveDb();
     return { success: true };
   }

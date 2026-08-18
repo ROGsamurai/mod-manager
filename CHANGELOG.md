@@ -1,3 +1,12 @@
+Version 1.1.4
+NEW
+- Updating a mod now removes the previously installed version's files first, then installs the new one. Renamed, split or dropped files from the old version no longer linger in the game folder. Your BepInEx config files, and any files you added to a mod's folder yourself, are left untouched
+- The manager checks that "Card Shop Simulator.exe" is present in the folder you set before installing anything, and tells you when it isn't
+FIXED
+- "spawn ...7za.exe ENOENT" no longer happens after the app has been open for a while. The portable build unpacks itself into your Temp folder, and Windows cleanup tools and antivirus were deleting the 7-Zip helper out from under it while it ran. The helper is now kept in the app's own settings folder, and is restored and retried automatically if it ever goes missing — no more restarting the manager
+- If the 7-Zip helper genuinely can't be run, the error now explains what to do instead of showing a raw spawn error
+- Uninstalling or updating a mod that was disabled left its old files behind in disabled-mods. They are now removed for every kind of mod, so an old version can never reappear when you re-enable it
+
 Version 1.1.2
 NEW
 - Linux / Steam Deck support: the manager is now also built as an AppImage. It keeps its staging and disabled-mods folders next to the .AppImage file, the same way the Windows portable build does
