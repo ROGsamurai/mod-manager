@@ -1,10 +1,12 @@
 Version 1.1.4
 NEW
+- The "Extract To" dropdown is gone from Downloaded Mods. The manager reads each archive and decides the destination itself, and the row now shows where the mod will be installed instead of letting it be changed — picking the wrong target was a common cause of a mod installing successfully but doing nothing in game
 - Updating a mod now removes the previously installed version's files first, then installs the new one. Renamed, split or dropped files from the old version no longer linger in the game folder. Your BepInEx config files, and any files you added to a mod's folder yourself, are left untouched
 - The manager checks that "Card Shop Simulator.exe" is present in the folder you set before installing anything, and tells you when it isn't
 FIXED
 - "spawn ...7za.exe ENOENT" no longer happens after the app has been open for a while. The portable build unpacks itself into your Temp folder, and Windows cleanup tools and antivirus were deleting the 7-Zip helper out from under it while it ran. The helper is now kept in the app's own settings folder, and is restored and retried automatically if it ever goes missing — no more restarting the manager
 - If the 7-Zip helper genuinely can't be run, the error now explains what to do instead of showing a raw spawn error
+- Fixed the manager showing a transparent window and closing immediately on some Windows 10 systems (crash 0x80000003, which only "--no-sandbox" worked around). When a launch dies before the window appears, the next start automatically runs without the Chromium sandbox, so no command-line switch is needed. Machines that work normally keep the sandbox enabled
 - The install progress bar now shows a separate "Removing old version" step before "Installing", and the success message reports how many old files were deleted, so a real removal is distinguishable from an overwrite
 - Updating a mod that was imported before file tracking existed (no tracked file list) aborted its cleanup silently. It now completes the install and reports that the old copy had nothing tracked to remove
 - Uninstalling or updating a mod that was disabled left its old files behind in disabled-mods. They are now removed for every kind of mod, so an old version can never reappear when you re-enable it

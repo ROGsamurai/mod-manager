@@ -28,6 +28,50 @@ process.on('unhandledRejection', (reason) => {
 app.disableHardwareAcceleration();
 app.setName('Real TCG Overhaul Mod Manager');
 
+// ─── Chromium sandbox fallback ───────────────────────────────────────────────
+// On some Windows 10 machines Chromium cannot start its sandboxed child
+// processes: the app shows a transparent window for a moment and dies with
+// exception 0x80000003 (STATUS_BREAKPOINT). --disable-gpu changes nothing;
+// --no-sandbox fixes it. It is environment-specific (security software,
+// policy, or Win32k lockdown settings), and running the portable build out of
+// %TEMP% makes it more likely.
+//
+// Rather than disabling the sandbox for everyone, detect the failure and retry
+// without it. Two signals feed this:
+//   1. A launch marker written before the window is created and cleared once
+//      the UI has loaded. Finding it set at startup means the previous run died
+//      before showing anything — the exact symptom above.
+//   2. child-process-gone / render-process-gone with a launch failure, which is
+//      the direct signal; that path relaunches immediately (see below).
+const SANDBOX_OFF = 'sandboxFallback';
+const LAUNCH_PENDING = 'launchPending';
+if (store.get(SANDBOX_OFF, false) || store.get(LAUNCH_PENDING, false)) {
+  if (!store.get(SANDBOX_OFF, false)) {
+    console.warn('[startup] previous launch never finished loading — disabling the Chromium sandbox for this machine');
+    store.set(SANDBOX_OFF, true);
+  }
+  app.commandLine.appendSwitch('no-sandbox');
+}
+store.set(LAUNCH_PENDING, true);
+
+let sandboxRelaunching = false;
+/** Turn the sandbox off for this machine and restart, once. */
+function relaunchWithoutSandbox(reason) {
+  if (sandboxRelaunching || store.get(SANDBOX_OFF, false)) return;
+  sandboxRelaunching = true;
+  console.warn(`[startup] child process failed to launch (${reason}) — restarting without the Chromium sandbox`);
+  store.set(SANDBOX_OFF, true);
+  store.set(LAUNCH_PENDING, false);
+  app.relaunch({ args: process.argv.slice(1) });
+  app.exit(0);
+}
+
+app.on('child-process-gone', (_e, details) => {
+  if (details?.reason === 'launch-failed' || details?.reason === 'crashed') {
+    relaunchWithoutSandbox(`${details.type}/${details.reason}`);
+  }
+});
+
 let mainWindow = null;
 let stagingWatcher = null;
 let tray = null;
@@ -86,6 +130,17 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
+  // The window rendered — this launch is healthy, so clear the marker that would
+  // otherwise trip the sandbox fallback on the next start.
+  mainWindow.webContents.on('did-finish-load', () => {
+    try { store.set(LAUNCH_PENDING, false); } catch {}
+  });
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    if (details?.reason === 'launch-failed' || details?.reason === 'crashed') {
+      relaunchWithoutSandbox(`renderer/${details.reason}`);
+    }
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 
   // Prevent the HTML page or Electron from overriding the window title
@@ -151,7 +206,12 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', () => { isQuitting = true; try { modManager.sweepPendingDeletes(); } catch {} });
+app.on('before-quit', () => {
+  isQuitting = true;
+  // A normal shutdown is not a failed launch.
+  try { store.set(LAUNCH_PENDING, false); } catch {}
+  try { modManager.sweepPendingDeletes(); } catch {}
+});
 app.on('window-all-closed', () => { if (stagingWatcher) stagingWatcher.close(); if (tray) tray.destroy(); app.quit(); });
 
 // Window controls

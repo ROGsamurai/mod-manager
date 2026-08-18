@@ -1822,7 +1822,10 @@ class ModManager {
     }
     const archivePath = path.join(this.getStagingPath(), filename);
     if (!fs.existsSync(archivePath)) throw new Error(`Archive not found: ${filename}`);
-    if (!TARGETS[targetKey]) throw new Error(`Invalid target: ${targetKey}`);
+    // targetKey is optional. The Downloaded Mods list no longer lets users pick a
+    // destination — the manager decides from the archive's own structure below,
+    // once the archive has been read. A caller may still pass one explicitly.
+    if (targetKey && !TARGETS[targetKey]) throw new Error(`Invalid target: ${targetKey}`);
 
     const parsed = this._parseNexusFilename(filename);
     const name = modName || parsed.name;
@@ -1835,6 +1838,13 @@ class ModManager {
 
     // Security scan — block dangerous archives before installation
     const peek = await this.peekArchive(filename);
+    // Resolve the destination from the archive contents when the caller didn't
+    // force one. peekArchive already ran _detectTarget over the real entry list,
+    // so this is the same answer the list shows, decided by the backend.
+    if (!targetKey) {
+      targetKey = peek.suggestedTarget && TARGETS[peek.suggestedTarget] ? peek.suggestedTarget : 'plugins';
+      console.log(`[install] "${filename}": detected target ${targetKey}`);
+    }
     if (peek.security && !peek.security.safe) {
       return {
         success: false,

@@ -36,11 +36,11 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
     // Populate defaults
     staged.forEach(f => {
       if (!names[f.filename]) setNames(p => ({ ...p, [f.filename]: f.parsedName || f.filename.replace(/\.(zip|rar|7z)$/i, '') }));
-      if (!sels[f.filename]) setSels(p => ({ ...p, [f.filename]: 'plugins' }));
+      // No 'plugins' placeholder: sels is display-only now, and guessing here
+      // would show a destination that detection then contradicts.
       if (f.olderVersions) {
         for (const ov of f.olderVersions) {
           if (!names[ov.filename]) setNames(p => ({ ...p, [ov.filename]: f.parsedName || f.filename.replace(/\.(zip|rar|7z)$/i, '') }));
-          if (!sels[ov.filename]) setSels(p => ({ ...p, [ov.filename]: sels[f.filename] || 'plugins' }));
         }
       }
       if (!securityMap[f.filename] && isVerifiedFile(f.filename)) {
@@ -71,6 +71,13 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
     }
   }, [staged]);
 
+  // Detected target key -> human label. While detection is still in flight the
+  // key is undefined; say so rather than showing a wrong destination.
+  const targetLabel = (key) => {
+    if (!key) return t('Detecting...');
+    const hit = targets.find(x => x.key === key);
+    return hit ? hit.label : key;
+  };
   const doPeek = async filename => {
     if (peek === filename) { setPeek(null); setPreview(null); return; }
     setPeek(filename);
@@ -81,7 +88,9 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   // Install / update / downgrade all take the same path now: the backend always
   // removes the previously installed copy's files before extracting the new one.
   const doInstall = async (filename) => {
-    await onInstall(filename, sels[filename] || 'plugins', names[filename] || filename.replace(/\.(zip|rar|7z)$/i, ''));
+    // No target argument: installMod detects the destination from the archive
+    // itself. The renderer's detected value is display only.
+    await onInstall(filename, null, names[filename] || filename.replace(/\.(zip|rar|7z)$/i, ''));
     setPeek(null); setPreview(null);
   };
   const [bulkAction, setBulkAction] = useState(null); // 'installNew' | 'updateAll'
@@ -179,11 +188,15 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       {f.olderVersions?.length > 0 && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}</span>}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{t('Extract To')}</div>
-                    <select className="select" value={sels[f.filename] || 'plugins'} onChange={e => setSels(p => ({ ...p, [f.filename]: e.target.value }))} style={{ minWidth: 180 }}>
-                      {targets.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-                    </select>
+                  {/* Destination is decided by the manager from the archive's own
+                      structure (and re-checked in the backend at install time), so
+                      this is a label, not a control. Users picking the wrong target
+                      was a common cause of "installed fine but does nothing". */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, minWidth: 180 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{t('Installs To')}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>
+                      {targetLabel(sels[f.filename])}
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
                     {securityMap[f.filename] && (
