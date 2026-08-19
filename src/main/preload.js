@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   launchGame: () => ipcRenderer.invoke('game:launch'),
   getBepInExStatus: () => ipcRenderer.invoke('game:bepinex'),
   bepinexHealthCheck: () => ipcRenderer.invoke('game:bepinex-health'),
+  removeDuplicatePlugins: () => ipcRenderer.invoke('game:remove-duplicate-plugins'),
   getStagedFiles: () => ipcRenderer.invoke('staging:list'),
   addToStaging: () => ipcRenderer.invoke('staging:add'),
   removeFromStaging: (f) => ipcRenderer.invoke('staging:remove', f),

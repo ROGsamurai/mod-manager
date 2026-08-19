@@ -10,6 +10,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
   const [freshBusy, setFreshBusy] = useState(false);
   const [healthCheck, setHealthCheck] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
+  const [dupBusy, setDupBusy] = useState(false);
   const [regroupBusy, setRegroupBusy] = useState(false);
 
   useEffect(() => {
@@ -65,7 +66,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
           {t('Xbox Game Pass: this is the "Content" folder inside the install folder — mods must sit next to the .exe.')}
         </div>
       </S>
-      <S title={t('BepInEx Status')}>
+      <S title={t('Mod Status')}>
         {/* Game executable check — shown first because BepInEx (and every mod)
             is meaningless if the game folder itself is wrong. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -81,10 +82,36 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.installed ? 'var(--green-bright)' : 'var(--red-bright)' }} />
-          <span style={{ fontSize: 16, fontWeight: 600 }}>{bepinex.installed ? t('Installed ✓') : t('Not Installed')}</span>
+          <span style={{ fontSize: 16, fontWeight: 600 }}>{bepinex.installed ? t('BepInEx Installed ✓') : t('BepInEx Not Installed')}</span>
         </div>
         <div style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.7, marginBottom: 12 }}>
           {bepinex.installed ? t('BepInEx is ready. Plugin mods should extract to "BepInEx / plugins".') : bepinex.reason}
+        </div>
+        {/* Live duplicate check — same treatment as the game and BepInEx rows,
+            because a duplicate plugin DLL makes a mod look installed and enabled
+            while BepInEx silently skips it. Refreshes with the rest of the
+            status, not only when the Health Check is run. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.duplicateCount > 0 ? 'var(--red-bright)' : 'var(--green-bright)' }} />
+          <span style={{ fontSize: 16, fontWeight: 600 }}>
+            {bepinex.duplicateCount > 0 ? t('Duplicate Mods Found') : t('No Duplicate Mods ✓')}
+          </span>
+          {bepinex.duplicateCount > 0 && (
+            <button className="btn btn-accent btn-sm" disabled={dupBusy} onClick={async () => {
+              setDupBusy(true);
+              const r = await window.api.removeDuplicatePlugins();
+              await onSetBepinex();
+              if (healthCheck) setHealthCheck(await window.api.bepinexHealthCheck());
+              setDupBusy(false);
+              if (r?.success) notify(`${r.removed.length} ${t('duplicate DLLs removed')}`, 'success');
+              else notify(r?.error || t('Could not remove duplicates'), 'error');
+            }}>{dupBusy ? '⏳' : '🧹'} {t('Remove duplicates')}</button>
+          )}
+        </div>
+        <div style={{ fontSize: 14, color: bepinex.duplicateCount > 0 ? 'var(--red-bright)' : 'var(--text-3)', lineHeight: 1.7, marginBottom: 12 }}>
+          {bepinex.duplicateCount > 0
+            ? `${t('More than one copy of')} ${(bepinex.duplicateDlls || []).join(', ')} ${t('is installed. BepInEx loads only one, so the mod can appear enabled while doing nothing.')}`
+            : t('No plugin is installed twice.')}
         </div>
         <button className="btn btn-ghost" onClick={async () => { setHealthBusy(true); setHealthCheck(await window.api.bepinexHealthCheck()); setHealthBusy(false); }} disabled={healthBusy} style={{ borderColor: 'var(--green-bright)' }}>
           {healthBusy ? '⏳' : '🩺'} {t('Health Check')}
@@ -101,6 +128,16 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
                 </span>
                 <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-2)', minWidth: 160 }}>{c.file}</span>
                 <span style={{ color: c.status === 'ok' ? 'var(--text-4)' : c.status === 'warn' ? 'var(--accent)' : 'var(--red-bright)', flex: 1 }}>{c.detail}</span>
+                {c.fixable === 'duplicate-dlls' && (
+                  <button className="btn btn-accent btn-sm" disabled={healthBusy} onClick={async () => {
+                    setHealthBusy(true);
+                    const r = await window.api.removeDuplicatePlugins();
+                    setHealthCheck(await window.api.bepinexHealthCheck());
+                    setHealthBusy(false);
+                    if (r?.success) notify(`${t('Removed')} ${r.removed.length} ${t('duplicate DLLs removed')}`, 'success');
+                    else notify(r?.error || t('Could not remove duplicates'), 'error');
+                  }}>🧹 {t('Remove duplicates')}</button>
+                )}
               </div>
             ))}
             {!healthCheck.ok && (
@@ -190,7 +227,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
       </S>
       <S title={t('About')}>
         <div style={{ fontSize: 13, color: 'var(--text-4)', lineHeight: 1.9 }}>
-          TCG Card Shop Mod Manager v1.1.4 — {t('Portable Edition')}<br />
+          TCG Card Shop Mod Manager v1.1.5 — {t('Portable Edition')}<br />
           {t('Local, offline mod manager. No API keys, no accounts, no tracking.')}<br />
           {t('Staging folder lives right next to the .exe')}
         </div>

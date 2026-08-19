@@ -1036,14 +1036,139 @@ class ModManager {
         reason: `"${GAME_EXE}" was not found in the selected folder. Point the game location at the folder containing it (for Xbox Game Pass that is the "Content" folder), or mods will install where the game cannot load them.`,
       };
     }
-    if (!this.isBepInExInstalled()) return { installed: false, gameFound: true, reason: 'BepInEx not found. Download it and install with Game Root target.' };
-    return { installed: true, gameFound: true };
+    if (!this.isBepInExInstalled()) return { installed: false, gameFound: true, reason: 'BepInEx not found. Download it and install with Game Root target.', ...this._duplicateStatus() };
+    return { installed: true, gameFound: true, ...this._duplicateStatus() };
+  }
+
+  /**
+   * Duplicate-plugin summary for the live Mod Status panel. Folded into
+   * getBepInExStatus so it refreshes on the same events as the game and BepInEx
+   * checks (startup, install, uninstall, path change) instead of only when
+   * someone opens the Health Check.
+   */
+  _duplicateStatus() {
+    try {
+      const groups = this.scanDuplicatePluginDlls();
+      return {
+        duplicateCount: groups.reduce((n, g) => n + g.strays.length, 0),
+        duplicateDlls: groups.map(g => g.dll),
+      };
+    } catch (err) {
+      console.warn('[status] duplicate scan failed:', err.message);
+      return { duplicateCount: 0, duplicateDlls: [] };
+    }
   }
 
   /** Detailed health check — verifies all critical BepInEx files.
    *  Every fs call is guarded: if a directory is locked (OneDrive/antivirus)
    *  or disappears mid-check, the result is reported as 'warn' instead of
    *  crashing the main process. */
+  /**
+   * Find plugin DLLs that exist in more than one place under BepInEx/plugins.
+   *
+   * BepInEx loads one plugin per GUID and skips the rest, so a duplicate leaves
+   * the mod listed and enabled in the F1 config menu while the copy that
+   * actually loaded may be looking for its assets somewhere else entirely — the
+   * failure a user hit with TextureReplacer.dll present both in plugins/ and in
+   * plugins/TextureReplacer/. Nothing in the game or the manager showed it.
+   *
+   * Detection is independent of who installed the copies: hand-installs and
+   * leftovers from other tools are exactly the cases that need catching.
+   * Shared libraries (0Harmony and friends) legitimately appear many times and
+   * are never reported.
+   */
+  scanDuplicatePluginDlls() {
+    const pluginsDir = path.join(this.gamePath || '', 'BepInEx', 'plugins');
+    if (!this.gamePath || !fs.existsSync(pluginsDir)) return [];
+
+    const byName = new Map();
+    const walk = (dir) => {
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) { walk(full); continue; }
+        if (!/\.dll$/i.test(e.name)) continue;
+        const key = e.name.toLowerCase();
+        if (ModManager.SHARED_DLLS.has(key)) continue;
+        if (!byName.has(key)) byName.set(key, []);
+        byName.get(key).push(full);
+      }
+    };
+    walk(pluginsDir);
+
+    // Which tracked mod, if any, owns each path.
+    const owner = new Map();
+    for (const [, m] of this.mods) {
+      for (const abs of this._absFilesOf(m)) owner.set(path.resolve(abs).toLowerCase(), m.name);
+    }
+
+    const ident = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const groups = [];
+    for (const [key, paths] of byName) {
+      if (paths.length < 2) continue;
+      const stem = ident(key.replace(/\.dll$/i, ''));
+      const score = (p) => {
+        const rel = path.relative(pluginsDir, p).replace(/\\/g, '/');
+        const depth = rel.split('/').length - 1;
+        let sc = 0;
+        // A copy inside a folder named after the DLL is the canonical layout.
+        if (depth > 0 && ident(rel.split('/')[0]) === stem) sc += 100;
+        if (owner.has(path.resolve(p).toLowerCase())) sc += 40;   // a mod claims it
+        if (depth > 0) sc += 10;                                   // in a folder beats plugins root
+        let mtime = 0;
+        try { mtime = fs.statSync(p).mtimeMs; } catch {}
+        return { sc, mtime };
+      };
+      const scored = paths.map(p => ({ path: p, ...score(p) }))
+        .sort((a, b) => (b.sc - a.sc) || (b.mtime - a.mtime));
+      groups.push({
+        dll: path.basename(paths[0]),
+        keep: scored[0].path,
+        strays: scored.slice(1).map(x => ({
+          path: x.path,
+          owner: owner.get(path.resolve(x.path).toLowerCase()) || null,
+        })),
+      });
+    }
+    return groups;
+  }
+
+  /**
+   * Delete the redundant copies found by scanDuplicatePluginDlls and untrack
+   * them from whichever mod claimed them, so the DB does not keep pointing at
+   * files that are gone.
+   */
+  async removeDuplicatePluginDlls() {
+    const groups = this.scanDuplicatePluginDlls();
+    const removed = [];
+    for (const g of groups) {
+      for (const stray of g.strays) {
+        try {
+          await fs.remove(stray.path);
+          removed.push(stray.path);
+          console.log(`[health] removed duplicate plugin DLL: ${stray.path} (kept ${g.keep})`);
+        } catch (err) {
+          console.warn(`[health] could not remove ${stray.path}:`, err.message);
+        }
+      }
+    }
+    if (removed.length > 0) {
+      const gone = new Set(removed.map(p => path.resolve(p).toLowerCase()));
+      for (const [, m] of this.mods) {
+        if (!Array.isArray(m.files) || m.files.length === 0) continue;
+        const abs = this._absFilesOf(m);
+        const keptFiles = m.files.filter((_, i) => !gone.has(path.resolve(abs[i]).toLowerCase()));
+        if (keptFiles.length !== m.files.length) {
+          m.files = keptFiles;
+          m.fileCount = keptFiles.length;
+        }
+      }
+      this._saveDb();
+    }
+    return removed;
+  }
+
   bepinexHealthCheck() {
     if (!this.gamePath) return { ok: false, checks: [{ file: 'Game Path', status: 'missing', detail: 'Game path not set' }] };
     const checks = [];
@@ -1082,6 +1207,22 @@ class ModManager {
     const pluginsList = safeExists(pluginsDir) ? safeReaddir(pluginsDir) : null;
     checks.push({ file: 'BepInEx/plugins/', status: safeExists(pluginsDir) ? (pluginsList ? 'ok' : 'warn') : 'warn',
       detail: safeExists(pluginsDir) ? (pluginsList ? `${pluginsList.length} items` : 'Present (cannot read — file locked)') : 'Plugins folder missing — created when first mod is installed.' });
+    // Duplicate plugin DLLs — invisible from inside the game, and the reason a
+    // mod can be installed, enabled and completely inert.
+    try {
+      const dupes = this.scanDuplicatePluginDlls();
+      if (dupes.length > 0) {
+        const names = dupes.map(d => d.dll).join(', ');
+        const count = dupes.reduce((n, d) => n + d.strays.length, 0);
+        checks.push({ file: 'Duplicate plugins', status: 'warn', fixable: 'duplicate-dlls',
+          detail: `${count} redundant cop${count === 1 ? 'y' : 'ies'} of ${names}. BepInEx loads only one, so the mod can appear enabled while doing nothing.` });
+      } else {
+        checks.push({ file: 'Duplicate plugins', status: 'ok', detail: 'No duplicate plugin DLLs' });
+      }
+    } catch (err) {
+      checks.push({ file: 'Duplicate plugins', status: 'warn', detail: 'Check failed: ' + err.message });
+    }
+
     const configDir = path.join(bepDir, 'config');
     const configList = safeExists(configDir) ? safeReaddir(configDir) : null;
     checks.push({ file: 'BepInEx/config/', status: safeExists(configDir) ? (configList ? 'ok' : 'warn') : 'warn',
@@ -1805,6 +1946,119 @@ class ModManager {
   }
 
   /**
+   * Absolute on-disk paths of a mod's tracked files. Mirrors the base-path rules
+   * uninstallMod uses: scatter installs are relative to the game folder (or
+   * BepInEx/), everything else to the mod's own extractTo.
+   */
+  _absFilesOf(mod) {
+    const files = Array.isArray(mod.files) ? mod.files : [];
+    let base;
+    if (mod.looseDlls) base = mod.extractTo;
+    else if (mod.targetKey === 'game_root') base = this.gamePath;
+    else if (mod.targetKey === 'bepinex') base = path.join(this.gamePath, 'BepInEx');
+    else base = mod.extractTo;
+    if (!base) return [];
+    return files.filter(Boolean).map(f => path.join(base, f));
+  }
+
+  /**
+   * The subfolder a mod's DLL must live in, taken from the curated known-mods
+   * list. TextureReplacer.dll only works from BepInEx/plugins/TextureReplacer/;
+   * dropped straight into BepInEx/plugins/ it still loads and still appears in
+   * the F1 config menu, but resolves its texture folders next to itself and so
+   * finds nothing — and if both copies exist BepInEx loads one and skips the
+   * other by GUID, which is impossible to spot from the game.
+   *
+   * Returns the folder name when the DB says this mod's DLL belongs in one.
+   */
+  _requiredPluginFolder(modName, dllNames) {
+    const known = this._findKnownModByName(modName);
+    const paths = [...(known?.installedFiles || []), ...(known?.signature || [])];
+    const wanted = new Set(dllNames.map(d => path.basename(d).toLowerCase()));
+    for (const raw of paths) {
+      const m = /^bepinex\/plugins\/([^/]+)\/([^/]+\.dll)$/i.exec(String(raw).replace(/\\/g, '/'));
+      if (m && wanted.has(m[2].toLowerCase())) return m[1];
+    }
+    return null;
+  }
+
+  /** DLLs shared by many mods — never treat these as a mod's own plugin assembly. */
+  static get SHARED_DLLS() {
+    return new Set(['0harmony.dll', 'harmony.dll', 'newtonsoft.json.dll', 'mono.cecil.dll',
+      'bepinex.dll', 'bepinex.core.dll', 'bepinex.preloader.dll', 'unityengine.dll']);
+  }
+
+  /**
+   * After installing, delete stray copies of this mod's own plugin DLL that are
+   * sitting elsewhere under BepInEx/plugins — the exact situation a user hit
+   * with TextureReplacer.dll present both in plugins/ and in plugins/
+   * TextureReplacer/. BepInEx loads one and skips the other, so the mod looks
+   * installed and enabled while doing nothing.
+   *
+   * Deliberately narrow:
+   *   - only under BepInEx/plugins (never core/ or patchers/)
+   *   - only DLLs named after the mod itself, never shared libraries like
+   *     0Harmony.dll that legitimately appear in several places
+   *   - never a file another tracked mod claims
+   */
+  async _sweepDuplicatePluginDlls(mod) {
+    const pluginsRoot = path.join(this.gamePath, 'BepInEx', 'plugins');
+    if (!fs.existsSync(pluginsRoot)) return [];
+
+    const ours = this._absFilesOf(mod).filter(p => /\.dll$/i.test(p));
+    if (ours.length === 0) return [];
+
+    // Only the mod's own assembly: name matches the mod, or its install folder.
+    const ident = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const idents = new Set([ident(mod.name), ident(path.basename(mod.extractTo || ''))].filter(Boolean));
+    const keep = new Set();
+    const targets = new Set();
+    for (const p of ours) {
+      const base = path.basename(p);
+      keep.add(path.resolve(p).toLowerCase());
+      if (ModManager.SHARED_DLLS.has(base.toLowerCase())) continue;
+      if (idents.has(ident(base.replace(/\.dll$/i, '')))) targets.add(base.toLowerCase());
+    }
+    if (targets.size === 0) return [];
+
+    const claimed = new Set();
+    for (const [id, m] of this.mods) {
+      if (id === mod.id) continue;
+      for (const p of this._absFilesOf(m)) claimed.add(path.resolve(p).toLowerCase());
+    }
+
+    const found = [];
+    const walk = (dir) => {
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (targets.has(e.name.toLowerCase())) found.push(full);
+      }
+    };
+    walk(pluginsRoot);
+
+    const removed = [];
+    for (const f of found) {
+      const abs = path.resolve(f).toLowerCase();
+      if (keep.has(abs)) continue;
+      if (claimed.has(abs)) {
+        console.warn(`[install] duplicate ${path.basename(f)} at ${f} belongs to another tracked mod — left alone`);
+        continue;
+      }
+      try {
+        await fs.remove(f);
+        removed.push(f);
+        console.log(`[install] removed duplicate plugin DLL: ${f}`);
+      } catch (err) {
+        console.warn(`[install] could not remove duplicate ${f}:`, err.message);
+      }
+    }
+    return removed;
+  }
+
+  /**
    * Install a staged archive.
    *
    * `skipRemoval` is retained for IPC compatibility but is no longer honoured:
@@ -2046,23 +2300,35 @@ class ModManager {
         const allDlls = rootFiles.length > 0 && rootFiles.every(p => p.toLowerCase().endsWith('.dll'));
 
         if (allDlls) {
-          // DLL-only archive — extract directly to plugins folder, no subfolder wrapping
-          extractTo = path.join(this.gamePath, target.relative);
+          // A bare DLL archive normally belongs directly in plugins/. But some
+          // mods only work from their own subfolder — TextureReplacer resolves
+          // objects_textures next to its DLL, so plugins/TextureReplacer.dll
+          // loads, shows up enabled in the F1 menu, and replaces nothing. The
+          // known-mods list records the required folder; honour it.
+          const requiredFolder = this._requiredPluginFolder(name, rootFiles);
+          extractTo = requiredFolder
+            ? path.join(this.gamePath, target.relative, requiredFolder)
+            : path.join(this.gamePath, target.relative);
+          if (requiredFolder) console.log(`[install] "${name}": DLL must live in plugins/${requiredFolder} — extracting there`);
           fs.ensureDirSync(extractTo);
           await this._extract(archivePath, extractTo, this.onProgress);
           // Track just the DLL filenames (not entire plugins folder)
           let looseDllFiles = rootFiles.map(p => p.replace(/\\/g, '/'));
           looseDllFiles = this._applyExcludeRules(looseDllFiles, this._findKnownModByName(name));
           const loosePrefab = looseDllFiles.some(f => f.toLowerCase().includes('_prefabloader'));
-          const mod = { id, name, version, filename, targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: true };
+          const mod = { id, name, version, filename, targetKey, installTarget: targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: !requiredFolder };
           this.mods.set(id, mod);
           this._saveDb();
           this._autoAssignGroupByName(id, name, looseDllFiles);
+          const dupes = await this._sweepDuplicatePluginDlls(mod);
           if (this.getDeleteAfterInstall()) {
             const zipPath = path.join(this.getStagingPath(), filename);
             if (fs.existsSync(zipPath)) fs.removeSync(zipPath);
           }
-          return { success: true, mod };
+          // Same shape as the main return path. This used to return
+          // { success, mod }, which the IPC layer wrapped again — the renderer
+          // then read r.mod.name off the wrapper and showed "undefined".
+          return { ...mod, removedOldFiles, previousWasUntracked, removedDuplicates: dupes.length };
         } else {
           // Mixed loose files — wrap in a named subfolder (strip archive extensions from folder name)
           const safeName = this._sanitize(name).replace(/\.(zip|rar|7z)$/i, '');
@@ -2164,9 +2430,15 @@ class ModManager {
       if (fs.existsSync(zipPath)) fs.removeSync(zipPath);
     }
 
-    // Returned as a COPY: removedOldFiles/previousWasUntracked are reporting
-    // fields for this install only and must not end up persisted in the DB.
-    return { ...mod, removedOldFiles, previousWasUntracked };
+    // Remove stray copies of this mod's own DLL left elsewhere under plugins/
+    // (e.g. a hand-installed TextureReplacer.dll sitting in plugins/ next to the
+    // proper plugins/TextureReplacer/ copy) — BepInEx would load one and skip
+    // the other, leaving the mod silently inert.
+    const removedDuplicates = (await this._sweepDuplicatePluginDlls(mod)).length;
+
+    // Returned as a COPY: removedOldFiles/previousWasUntracked/removedDuplicates
+    // are reporting fields for this install only and must not be persisted.
+    return { ...mod, removedOldFiles, previousWasUntracked, removedDuplicates };
   }
 
   getDeleteAfterInstall() { return store.get('deleteAfterInstall', false); }

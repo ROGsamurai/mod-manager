@@ -252,6 +252,10 @@ ipcMain.handle('game:bepinex', () => {
   try { return modManager.getBepInExStatus(); }
   catch (e) { console.error('[game:bepinex]', e); return { installed: false, reason: 'Status check failed.' }; }
 });
+ipcMain.handle('game:remove-duplicate-plugins', async () => {
+  try { return { success: true, removed: await modManager.removeDuplicatePluginDlls() }; }
+  catch (e) { console.error('[game:remove-duplicate-plugins]', e); return { success: false, error: e.message }; }
+});
 ipcMain.handle('game:bepinex-health', () => {
   try { return modManager.bepinexHealthCheck(); }
   catch (e) { console.error('[game:bepinex-health]', e); return { ok: false, checks: [{ file: 'Health Check', status: 'warn', detail: 'Check failed: ' + e.message }] }; }

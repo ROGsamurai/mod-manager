@@ -126,7 +126,10 @@ function AppInner() {
       // Say how many old files were deleted before extracting. Watching the game
       // folder can't tell a removal from an overwrite when the new version ships
       // the same filenames, so the count is the only honest signal.
-      const removedNote = r.mod.removedOldFiles > 0 ? ` — ${r.mod.removedOldFiles} ${t('old files removed')}` : '';
+      const notes = [];
+      if (r.mod.removedOldFiles > 0) notes.push(`${r.mod.removedOldFiles} ${t('old files removed')}`);
+      if (r.mod.removedDuplicates > 0) notes.push(`${r.mod.removedDuplicates} ${t('duplicate DLLs removed')}`);
+      const removedNote = notes.length ? ` — ${notes.join(', ')}` : '';
       notify(`${t('Install')}: "${r.mod.name}" → ${r.mod.targetLabel}${removedNote}`, 'success');
       await refreshMods(); await refreshStaged(); setBepinex(await window.api.getBepInExStatus());
     }
