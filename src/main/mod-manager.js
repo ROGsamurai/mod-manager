@@ -1720,6 +1720,105 @@ class ModManager {
     }
   }
 
+  /**
+   * Mods that must never be installed, with the reason shown to the user.
+   *
+   * Matching is by ARCHIVE CONTENTS first (renaming a download must not defeat
+   * the block) and by mod name second. Each entry in `signatures` is a group of
+   * path fragments that must ALL be present; any group matching blocks the
+   * archive. Fragments match a full path, a trailing path segment, or a
+   * substring, so both normal and "VORTEX VERSION" packagings are caught.
+   */
+  static get BLOCKED_MODS() {
+    return [
+      {
+        id: 'bepinex-pack',
+        name: 'BepInEx Pack for TCG Card Shop Simulator',
+        reason: 'This is the plain BepInEx pack. It has no Configuration Manager and none of the settings this game\'s mods rely on.',
+        useInstead: 'Pre-configured BepInEx with Configuration Manager',
+        namePatterns: [/\bbepinex\s*pack\b/i],
+        // A stock BepInEx distribution ships version.dll next to winhttp.dll.
+        // The pre-configured pack does not, which is what keeps this rule from
+        // catching the one everybody should actually be using.
+        signatures: [['version.dll', 'winhttp.dll', 'bepinex/core/bepinex.dll']],
+      },
+      {
+        id: 'create-cards',
+        name: 'Create Cards',
+        reason: 'Known to break the game.',
+        useInstead: 'Enhanced Prefab Loader',
+        namePatterns: [/^\s*create\s*cards\b/i],
+        signatures: [
+          ['createcardspreloader.dll'],
+          ['createcards/createcards.dll'],
+        ],
+      },
+      {
+        id: 'card-configurator',
+        name: 'Card Configurator',
+        reason: 'Known to break the game.',
+        useInstead: 'Enhanced Prefab Loader',
+        namePatterns: [/^\s*card\s*configurator\b/i],
+        signatures: [['cardconfigurator/cardconfigurator.dll']],
+      },
+      {
+        id: 'card-expansion-mod',
+        name: 'Card Expansion Mod',
+        reason: 'Known to break the game.',
+        useInstead: 'Enhanced Prefab Loader',
+        namePatterns: [/^\s*card\s*expansion\s*mod\b/i],
+        signatures: [
+          ['tcgshopexpansionmod.dll'],
+          ['customexpansionpackimages/'],
+        ],
+      },
+      {
+        id: 'new-cards-mod',
+        name: 'New Cards Mod',
+        reason: 'Known to break the game.',
+        useInstead: 'Enhanced Prefab Loader',
+        namePatterns: [/^\s*new\s*cards\s*mod\b/i],
+        signatures: [
+          ['tcgshopnewcardsmod.dll'],
+          ['tcgshopnewcardsmodpreloader.dll'],
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Check a staged archive against BLOCKED_MODS.
+   * Returns { name, reason, useInstead, matchedBy } or null.
+   */
+  _findBlockedMod(filename, entries) {
+    const paths = (entries || [])
+      .filter(e => e && !e.isDir && e.path)
+      .map(e => String(e.path).replace(/\\/g, '/').toLowerCase());
+    const parsedName = this._parseNexusFilename(filename)?.name || '';
+    const hay = `${parsedName} ${filename}`.replace(/[_-]+/g, ' ').toLowerCase();
+
+    // Never block the pre-configured pack, whatever else it looks like.
+    if (/pre[\s-]*configured|configuration\s*manager/i.test(hay)) return null;
+
+    const hasFragment = (frag) =>
+      paths.some(p => p === frag || p.endsWith('/' + frag) || p.includes(frag));
+
+    for (const rule of ModManager.BLOCKED_MODS) {
+      const bySignature = (rule.signatures || []).some(group => group.every(hasFragment));
+      const byName = (rule.namePatterns || []).some(re => re.test(hay));
+      if (bySignature || byName) {
+        return {
+          id: rule.id,
+          name: rule.name,
+          reason: rule.reason,
+          useInstead: rule.useInstead || null,
+          matchedBy: bySignature ? 'contents' : 'name',
+        };
+      }
+    }
+    return null;
+  }
+
   async peekArchive(filename) {
     const archivePath = path.join(this.getStagingPath(), filename);
     const entries = [];
@@ -1736,7 +1835,8 @@ class ModManager {
     }
     const suggestedTarget = this._detectTarget(entries);
     const security = this._scanSecurity(entries, filename);
-    return { entries, suggestedTarget, security };
+    const blockedMod = this._findBlockedMod(filename, entries);
+    return { entries, suggestedTarget, security, blockedMod };
   }
 
   /** Security scan — checks archive contents for threats before installation */
@@ -2092,6 +2192,15 @@ class ModManager {
 
     // Security scan — block dangerous archives before installation
     const peek = await this.peekArchive(filename);
+    // Blocklist — refuse before anything is written. Checked here rather than
+    // only in the UI so no other code path (bulk install, a future import) can
+    // slip one of these in.
+    const blockedMod = this._findBlockedMod(filename, peek.entries);
+    if (blockedMod) {
+      const alt = blockedMod.useInstead ? ` Use ${blockedMod.useInstead} instead.` : '';
+      throw new Error(`"${blockedMod.name}" cannot be installed. ${blockedMod.reason}${alt}`);
+    }
+
     // Resolve the destination from the archive contents when the caller didn't
     // force one. peekArchive already ran _detectTarget over the real entry list,
     // so this is the same answer the list shows, decided by the backend.

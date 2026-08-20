@@ -21,6 +21,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   const [peek, setPeek] = useState(null);
   const [preview, setPreview] = useState(null);
   const [securityMap, setSecurityMap] = useState({});
+  const [blockedMap, setBlockedMap] = useState({});
   // Filenames currently being deleted — hidden from the list immediately so the
   // ✕ click feels instant instead of waiting for the disk + refresh round trip.
   const [removing, setRemoving] = useState(new Set());
@@ -52,13 +53,16 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
           if (!names[ov.filename]) setNames(p => ({ ...p, [ov.filename]: f.parsedName || f.filename.replace(/\.(zip|rar|7z)$/i, '') }));
         }
       }
-      if (!securityMap[f.filename] && isVerifiedFile(f.filename)) {
+      if (!securityMap[f.filename] && isVerifiedFile(f.filename) && !blockedMap[f.filename]) {
         setSecurityMap(p => ({ ...p, [f.filename]: { safe: true, blocked: [], warnings: [], scanned: 0, verified: true } }));
       }
       if (!analyzed.has(f.filename)) {
         setAnalyzed(prev => new Set(prev).add(f.filename));
         window.api.peekArchive(f.filename).then(r => {
           if (r.security) setSecurityMap(p => ({ ...p, [f.filename]: r.security }));
+          // Mods on the blocklist are refused by the backend too; showing it here
+          // just means the user finds out before clicking Install.
+          setBlockedMap(p => ({ ...p, [f.filename]: r.blockedMod || null }));
         }).catch(() => {});
       }
     });
@@ -104,8 +108,8 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
     setPeek(null); setPreview(null);
   };
   const [bulkAction, setBulkAction] = useState(null); // 'installNew' | 'updateAll'
-  const doInstallNew = async () => { setBulkAction('installNew'); try { for (const f of staged) { if (f.status === 'new') await doInstall(f.filename); } } finally { setBulkAction(null); } };
-  const doUpdateAll = async () => { setBulkAction('updateAll'); try { for (const f of staged) { if (f.status === 'update') await doInstall(f.filename); } } finally { setBulkAction(null); } };
+  const doInstallNew = async () => { setBulkAction('installNew'); try { for (const f of staged) { if (f.status === 'new' && !blockedMap[f.filename]) await doInstall(f.filename); } } finally { setBulkAction(null); } };
+  const doUpdateAll = async () => { setBulkAction('updateAll'); try { for (const f of staged) { if (f.status === 'update' && !blockedMap[f.filename]) await doInstall(f.filename); } } finally { setBulkAction(null); } };
   const isBusy = !!bulkAction || !!installing;
 
   const [confirmClear, setConfirmClear] = useState(false);
@@ -120,8 +124,12 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
     }
   };
 
-  const newCount = staged.filter(f => f.status === 'new').length;
-  const updateCount = staged.filter(f => f.status === 'update').length;
+  // Blocked archives are excluded from the bulk counts: doInstallNew/doUpdateAll
+  // skip them, so counting them made "Install New (5)" promise installs that
+  // never happen — and the button showed up at all when every staged mod was
+  // blocked.
+  const newCount = staged.filter(f => f.status === 'new' && !blockedMap[f.filename]).length;
+  const updateCount = staged.filter(f => f.status === 'update' && !blockedMap[f.filename]).length;
 
   // Sort: updates first, then new, then reinstalls — updates are the most time-sensitive
   // so they deserve to be at the top. Stable sort preserves the manager's natural order
@@ -197,17 +205,29 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       {f.status === 'update' && <span style={{ color: 'var(--accent)', marginLeft: 6 }}>⬆️ {t('updates')} v{f.installedVersion}</span>}
                       {f.olderVersions?.length > 0 && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}</span>}
                     </div>
+                    {/* Blocked notice lives under the mod name, not in the
+                        destination column: the reason is a sentence, and putting a
+                        sentence in a fixed-width column squeezed the name and
+                        filename into one word per line. */}
+                    {blockedMap[f.filename] && (
+                      <div style={{ fontSize: 13, color: 'var(--red-bright)', marginTop: 4, lineHeight: 1.5 }}>
+                        <b style={{ letterSpacing: 0.5 }}>🛑 {t('Blocked')}</b> — {blockedMap[f.filename].reason}
+                        {blockedMap[f.filename].useInstead && <> {t('Use')} <b>{blockedMap[f.filename].useInstead}</b> {t('instead.')}</>}
+                      </div>
+                    )}
                   </div>
                   {/* Destination is decided by the manager from the archive's own
                       structure (and re-checked in the backend at install time), so
                       this is a label, not a control. Users picking the wrong target
                       was a common cause of "installed fine but does nothing". */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, minWidth: 180 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{t('Installs To')}</div>
-                    <div style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>
-                      {targetLabel(sels[f.filename])}
+                  {!blockedMap[f.filename] && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, width: 180 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{t('Installs To')}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>
+                        {targetLabel(sels[f.filename])}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
                     {securityMap[f.filename] && (
                       <span title={securityMap[f.filename].blocked.length > 0 ? securityMap[f.filename].blocked[0] : securityMap[f.filename].warnings.length > 0 ? securityMap[f.filename].warnings[0] : securityMap[f.filename].verified ? t('Verified Safe') : `✓ ${t('Safe')}`}
@@ -220,15 +240,19 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       </span>
                     )}
                     <button className="btn btn-ghost btn-sm" onClick={() => doPeek(f.filename)}>{peek === f.filename ? '▲' : '▼'}</button>
-                    {f.olderVersions?.length > 0 && (
+                    {/* Blocked rows keep only the preview and delete buttons —
+                        a disabled Install button still reads as "maybe later". */}
+                    {!blockedMap[f.filename] && f.olderVersions?.length > 0 && (
                       <button className="btn btn-ghost btn-sm" onClick={() => doInstall(f.olderVersions[0].filename)} disabled={isBusy || !gameFound} style={{ color: '#c0392b', borderColor: '#c0392b44' }}>
                         ⬇️ {t('Downgrade')}
                       </button>
                     )}
-                    <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename)} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
-                      {installing === f.filename ? '⏳' : f.status === 'update' ? '⬆️' : f.status === 'reinstall' ? '🔄' : '📥'}
-                      {' '}{f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
-                    </button>
+                    {!blockedMap[f.filename] && (
+                      <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename)} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
+                        {installing === f.filename ? '⏳' : f.status === 'update' ? '⬆️' : f.status === 'reinstall' ? '🔄' : '📥'}
+                        {' '}{f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
+                      </button>
+                    )}
                     <button className="btn btn-danger btn-sm" disabled={removing.has(f.filename)} onClick={async () => {
                       // A row can represent several archives of the same mod (the
                       // primary plus f.olderVersions). Deleting only the primary
