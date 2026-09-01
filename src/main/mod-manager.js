@@ -1646,6 +1646,24 @@ class ModManager {
    * (EPERM) until the whole app exits — which is exactly the "the ✕ button only
    * works after I close the manager" symptom. Always reap the child.
    */
+  /**
+   * True when a node-7z listing entry is a directory.
+   *
+   * node-7z reports the attribute column as `attributes` ("D...." for a folder).
+   * This used to read `e.attr`, which is always undefined — so EVERY entry in a
+   * .7z or .rar looked like a file. A mod packed as a single folder therefore
+   * looked like it had a root-level file, single-folder detection failed, and
+   * the installer wrapped it in a second folder of the same name:
+   * plugins/StorageShelfExpanded/StorageShelfExpanded/. Zip archives were fine
+   * because node-stream-zip reports isDirectory directly.
+   */
+  _sevenEntryIsDir(e) {
+    const attrs = e?.attributes || e?.attr || '';
+    if (attrs.startsWith('D')) return true;
+    const f = e?.file || '';
+    return f.endsWith('/') || f.endsWith('\\');
+  }
+
   _sevenList(archivePath, bin) {
     return this._run7z(bin, b => this._sevenListOnce(archivePath, b));
   }
@@ -1713,7 +1731,7 @@ class ModManager {
         result.push({
           path: (e.file || '').replace(/\\/g, '/'),
           size: e.size || 0,
-          isDir: (e.attr || '').startsWith('D'),
+          isDir: this._sevenEntryIsDir(e),
         });
       }
       return result;
@@ -1830,7 +1848,7 @@ class ModManager {
       for (const e of rarEntries) entries.push({ path: e.file, size: e.size, isDir: e.isDir });
     } else {
       for (const e of await this._sevenList(archivePath)) {
-        entries.push({ path: e.file, size: e.size || 0, isDir: e.attr?.startsWith('D') });
+        entries.push({ path: e.file, size: e.size || 0, isDir: this._sevenEntryIsDir(e) });
       }
     }
     const suggestedTarget = this._detectTarget(entries);
@@ -2558,12 +2576,18 @@ class ModManager {
     const topItems = new Set();
     const topFiles = [];
 
+    // Directory entries must never count as loose root files. 7z and rar list a
+    // mod's own folder as a bare entry with no trailing slash
+    // ("StorageShelfExpanded"), so counting it as a file made hasSingleFolder
+    // false and the installer wrapped the archive in a second folder of the same
+    // name: plugins/StorageShelfExpanded/StorageShelfExpanded/. Zips happened to
+    // escape this because their directory entries carry a trailing slash.
     if (/\.zip$/i.test(filename)) {
       const zipEntries = await this._listZipEntries(archivePath);
       for (const e of zipEntries) {
         const first = e.path.split('/')[0];
         topItems.add(first);
-        if (!e.path.includes('/')) topFiles.push(first);
+        if (!e.isDir && !e.path.includes('/')) topFiles.push(first);
       }
     } else if (/\.rar$/i.test(filename)) {
       const bin7z = this._getSystem7z();
@@ -2571,14 +2595,14 @@ class ModManager {
         for (const e of await this._sevenList(archivePath, bin7z)) {
           const first = e.file.split(/[\/\\/]/)[0];
           topItems.add(first);
-          if (!e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
+          if (!this._sevenEntryIsDir(e) && !e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
         }
       }
     } else {
       for (const e of await this._sevenList(archivePath)) {
         const first = e.file.split(/[/\\]/)[0];
         topItems.add(first);
-        if (!e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
+        if (!this._sevenEntryIsDir(e) && !e.file.includes('/') && !e.file.includes('\\')) topFiles.push(first);
       }
     }
 
@@ -2897,7 +2921,7 @@ class ModManager {
     const bin7z = this._getSystem7z();
     if (bin7z) {
       for (const e of await this._sevenList(archivePath, bin7z)) {
-        entries.push({ file: e.file?.replace(/\\/g, '/'), size: e.size || 0, isDir: e.attr?.startsWith('D') });
+        entries.push({ file: e.file?.replace(/\\/g, '/'), size: e.size || 0, isDir: this._sevenEntryIsDir(e) });
       }
     } else {
       const winrar = this._getWinRAR();
@@ -3118,7 +3142,7 @@ class ModManager {
       for (const e of rarEntries) { if (!e.isDir) files.push(e.file); }
     } else {
       for (const e of await this._sevenList(archivePath)) {
-        if (!e.attr?.startsWith('D')) files.push(e.file);
+        if (!this._sevenEntryIsDir(e)) files.push(e.file);
       }
     }
     // Always store forward-slash relative paths. Archives packed on Windows use

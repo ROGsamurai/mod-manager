@@ -1,5 +1,6 @@
-Version 1.1.5
+Version 1.1.6
 NEW
+- Mods packaged as .7z or .rar were installed into a second folder of the same name (BepInEx/plugins/StorageShelfExpanded/StorageShelfExpanded/), and the mod's .dll could then be deleted as a duplicate, leaving an empty folder and a mod that did nothing. Folders inside .7z and .rar archives were being counted as files, so the manager thought the mod was not packaged in a folder. Zip archives were never affected
 - Mods known to break the game are now blocked from installing: Card Expansion Mod, New Cards Mod, Create Cards and Card Configurator (including their VORTEX VERSION downloads). The BepInEx Pack is blocked too, since the Pre-configured BepInEx with Configuration Manager is what everyone should be using. Blocked archives are identified by their contents, so renaming the download does not get around it, and the row explains why and what to use instead
 - The "Extract To" dropdown is gone from Downloaded Mods. The manager reads each archive and decides the destination itself, and the row now shows where the mod will be installed instead of letting it be changed — picking the wrong target was a common cause of a mod installing successfully but doing nothing in game
 - Updating a mod now removes the previously installed version's files first, then installs the new one. Renamed, split or dropped files from the old version no longer linger in the game folder. Your BepInEx config files, and any files you added to a mod's folder yourself, are left untouched
