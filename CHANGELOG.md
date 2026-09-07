@@ -1,6 +1,7 @@
 Version 1.1.7
 NEW
 - Downloading the same mod twice no longer leaves both .zip files in the staging folder. Copies such as "Mod (1).zip" and "Mod (2).zip" are reduced to a single file, keeping the un-suffixed original (or whichever copy is currently installed). Optional-file variants of the same version, and the same mod in a different archive format, are not treated as copies
+- Adding a copy of a mod you already have now tells you it was skipped and leaves the file in your downloads folder. Archives are moved rather than copied when added, so a copy that was imported and then cleaned up would have disappeared from both places
 - Downloaded Mods now keeps only the two newest versions of each mod. Add a third and the oldest .zip is deleted from the staging folder automatically, which saves a lot of space on the larger expansion packs. The archive of the version you currently have installed is never removed, optional-file variants of the same version count as one version, and anything the manager cannot read a version number from is left alone
 
 FIXED

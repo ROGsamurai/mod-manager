@@ -202,7 +202,13 @@ function AppInner() {
     if (r?.success) {
       const { added, skipped, pruned } = r;
       if (added?.length) notify(`${added.length} archive(s) added`, 'success');
-      if (skipped?.length) notify(`${skipped.length} skipped`, 'warn');
+      // Say WHY something was skipped. A silent skip looks like the file failed
+      // to import; these are copies of something already in the list, and they
+      // are left untouched wherever the user downloaded them.
+      const dupes = (skipped || []).filter(x => x?.reason === 'duplicate');
+      const others = (skipped || []).length - dupes.length;
+      if (dupes.length) notify(`${dupes.length} ${t('already in Downloaded Mods — left in your downloads folder')}`, 'warn');
+      if (others > 0) notify(`${others} ${t('skipped')}`, 'warn');
       // Say when old versions were cleaned up, so files never vanish silently.
       if (pruned?.length) notify(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`, 'success');
       await refreshStaged();

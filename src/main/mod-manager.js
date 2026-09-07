@@ -1688,10 +1688,42 @@ class ModManager {
   }
 
   async addToStaging(filePaths) {
+    const dir = this.getStagingPath();
+    fs.ensureDirSync(dir);
+
+    // Identity of a download, ignoring the browser's "(1)" / "- Copy" suffix.
+    const canonKey = (filename) => {
+      const ext = path.extname(filename).toLowerCase();
+      return `${this._stripDuplicateSuffix(filename.slice(0, -ext.length)).toLowerCase()}${ext}`;
+    };
+    const isSuffixedCopy = (filename) => {
+      const ext = path.extname(filename);
+      const stem = filename.slice(0, -ext.length);
+      return this._stripDuplicateSuffix(stem) !== stem;
+    };
+
+    const staged = new Map(); // canonical key -> filename already in staging
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (/\.(zip|rar|7z)$/i.test(f)) staged.set(canonKey(f), f);
+      }
+    } catch {}
+
     const added = [];
+    const skipped = [];
     for (const src of filePaths) {
       const filename = path.basename(src);
-      const dest = path.join(this.getStagingPath(), filename);
+      // A re-download of something already here is redundant. Skip it BEFORE
+      // moving: these files are moved, not copied, so importing and then
+      // pruning would delete the user's download out of their Downloads folder
+      // and leave nothing behind. Leave the file where it is and say so.
+      const twin = staged.get(canonKey(filename));
+      if (twin && twin !== filename && isSuffixedCopy(filename)) {
+        skipped.push({ filename, reason: 'duplicate', of: twin });
+        console.log(`[staging] skipped ${filename} — already have ${twin}`);
+        continue;
+      }
+      const dest = path.join(dir, filename);
       try {
         await fs.move(src, dest, { overwrite: true });
       } catch {
@@ -1700,10 +1732,11 @@ class ModManager {
         try { await fs.remove(src); } catch {}
       }
       added.push(filename);
+      staged.set(canonKey(filename), filename);
     }
     // A newly added version can push an older one past the retention limit.
     const pruned = this.pruneStagingVersions();
-    return { added, skipped: [], pruned };
+    return { added, skipped, pruned };
   }
 
   async removeFromStaging(f) {
