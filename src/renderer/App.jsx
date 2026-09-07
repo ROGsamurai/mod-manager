@@ -211,9 +211,12 @@ function AppInner() {
       if (dupes.length) parts.push(`${dupes.length} ${t('already in Downloaded Mods — left in your downloads folder')}`);
       if (others > 0) parts.push(`${others} ${t('skipped')}`);
       if (pruned?.length) parts.push(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`);
-      if (parts.length === 0) parts.push(t('Nothing to add'));
+      // Nothing imported at all: the selection was already in the list. Say so
+      // rather than flashing a success message for work that did not happen.
+      const nothingHappened = parts.length === 0;
+      if (nothingHappened) parts.push(t('Mod version already added'));
       // Anything the user did not expect stays up longer than a success flash.
-      const noteworthy = dupes.length > 0 || others > 0 || pruned?.length > 0;
+      const noteworthy = nothingHappened || dupes.length > 0 || others > 0 || pruned?.length > 0;
       notify(parts.join(' · '), noteworthy ? 'warn' : 'success', noteworthy ? 7000 : undefined);
       await refreshStaged();
     }
