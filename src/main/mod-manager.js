@@ -817,6 +817,54 @@ class ModManager {
       store.set('migrationVersion', 19);
     }
 
+    // v20: Repair entries created from a duplicate download. Before the
+    // duplicate-suffix fix, installing "Mod-612-3-4-2-1777790483 (1).zip"
+    // produced an entry named after the raw filename tail
+    // ("BepInEx with Configuration Manager-2-5-4-23-2-1726589034") with no
+    // version, sitting alongside the correctly named one. Re-parse those names
+    // and merge them into the real entry.
+    if (migrationVersion < 20) {
+      const looksLikeRawTail = (n) => /-\d+(?:-\d+)+$/.test(n || '');
+      const byBase = new Map();
+      for (const [id, mod] of this.mods) {
+        if (!looksLikeRawTail(mod.name)) byBase.set(this._baseName(mod.name), id);
+      }
+      for (const [id, mod] of Array.from(this.mods)) {
+        if (!looksLikeRawTail(mod.name)) continue;
+        const parsed = this._parseNexusFilename(`${mod.name}.zip`);
+        const canonicalId = byBase.get(this._baseName(parsed.name));
+        const canonical = canonicalId && canonicalId !== id ? this.mods.get(canonicalId) : null;
+        if (canonical) {
+          // Same mod installed twice — fold the stray entry's files into the
+          // real one so nothing becomes untracked, then drop it.
+          const merged = Array.isArray(canonical.files) ? [...canonical.files] : [];
+          const seen = new Set(merged.map(f => f.toLowerCase()));
+          for (const f of (mod.files || [])) {
+            if (!seen.has(f.toLowerCase())) { merged.push(f); seen.add(f.toLowerCase()); }
+          }
+          canonical.files = merged;
+          canonical.fileCount = merged.length;
+          if (!canonical.version && mod.version) canonical.version = mod.version;
+          this.mods.delete(id);
+          // Drop the dead id from any group it was placed in.
+          const groups = this.getModGroups();
+          let groupsChanged = false;
+          for (const g of groups) {
+            const kept = g.modIds.filter(mid => mid !== id);
+            if (kept.length !== g.modIds.length) { g.modIds = kept; groupsChanged = true; }
+          }
+          if (groupsChanged) store.set('modGroups', groups);
+        } else if (parsed.name && parsed.name !== mod.name) {
+          // No twin — just give it its proper name and version back.
+          mod.name = parsed.name;
+          if (!mod.version && parsed.version) mod.version = parsed.version;
+          byBase.set(this._baseName(mod.name), id);
+        }
+        changed = true;
+      }
+      store.set('migrationVersion', 20);
+    }
+
     if (changed) this._saveDb();
   }
 
@@ -1410,8 +1458,37 @@ class ModManager {
    * left as "Collection Tracker v1.1.6" would fail to match the DB's
    * "Collection Tracker" and break all of those.
    */
+  /**
+   * Strip the suffix a browser adds when the same file is downloaded twice:
+   * "Mod-612-3-4-2-1777790483 (1).zip", " (2)", and Windows' " - Copy".
+   *
+   * This has to happen before anything else is parsed. The old-format detector
+   * keys off a trailing 9-10 digit timestamp, and " (1)" pushes that group out
+   * of last place — so the whole filename fell through to the new-format parser,
+   * which produced a different name ("Grading Overhaul-612-3-4-2-1777790") with
+   * no version. That is a different base key, so the second download installed
+   * as a SECOND mod instead of overwriting the first, and users ended up with
+   * two entries for one mod.
+   *
+   * Only a purely numeric parenthesised group is stripped. Nexus optional-file
+   * tags are words — "(HQ Base Game Sprites)", "(2k Textures)" — and are left
+   * for the variant-tag handling further down.
+   */
+  _stripDuplicateSuffix(base) {
+    let out = base;
+    let prev;
+    do {
+      prev = out;
+      out = out
+        .replace(/\s*\((\d{1,3})\)\s*$/, '')          // "name (1)", "name (12)"
+        .replace(/\s*-\s*Copy\s*$/i, '')               // "name - Copy"
+        .trim();
+    } while (out !== prev && out.length > 0);
+    return out || base;
+  }
+
   _parseNexusFilename(filename) {
-    const base = filename.replace(/\.(zip|rar|7z)$/i, '');
+    const base = this._stripDuplicateSuffix(filename.replace(/\.(zip|rar|7z)$/i, ''));
     const parts = base.split('-');
 
     // Detect the OLD format. Its signature is hyphen-delimited groups ending in
