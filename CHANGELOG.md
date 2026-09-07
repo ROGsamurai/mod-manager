@@ -1,4 +1,7 @@
 Version 1.1.7
+NEW
+- Downloaded Mods now keeps only the two newest versions of each mod. Add a third and the oldest .zip is deleted from the staging folder automatically, which saves a lot of space on the larger expansion packs. The archive of the version you currently have installed is never removed, optional-file variants of the same version count as one version, and anything the manager cannot read a version number from is left alone
+
 FIXED
 - Downloading the same mod twice and installing both copies left two entries in Installed Mods. A browser names the second download "Mod-612-3-4-2-1777790483 (1).zip", and that suffix stopped the manager recognising the file, so it read the mod's name straight off the filename and installed it as a separate mod. Copies now install over the original the way any other re-download does, and three copies of one mod show as a single row in Downloaded Mods
 - Existing double entries are merged automatically on first launch. The stray entry's files are folded into the real one so nothing becomes untracked, and it is removed from any group it was in

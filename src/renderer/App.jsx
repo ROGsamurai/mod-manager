@@ -200,9 +200,11 @@ function AppInner() {
   const handleAdd = async () => {
     const r = await window.api.addToStaging();
     if (r?.success) {
-      const { added, skipped } = r;
+      const { added, skipped, pruned } = r;
       if (added?.length) notify(`${added.length} archive(s) added`, 'success');
       if (skipped?.length) notify(`${skipped.length} skipped`, 'warn');
+      // Say when old versions were cleaned up, so files never vanish silently.
+      if (pruned?.length) notify(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`, 'success');
       await refreshStaged();
     }
   };

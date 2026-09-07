@@ -1579,6 +1579,70 @@ class ModManager {
     return { name: name || base, version: version || '' };
   }
 
+  /** How many versions of the same mod to keep in the staging folder. */
+  static get STAGING_KEEP_VERSIONS() { return 2; }
+
+  /**
+   * Delete stale archives from the staging folder, keeping the newest
+   * STAGING_KEEP_VERSIONS versions of each mod.
+   *
+   * Grouping is by mod, and retention is by VERSION rather than by file: a mod
+   * with a plain download plus an optional-file variant of the same version
+   * (e.g. "(HQ Base Game Sprites)") keeps both, since those are one version in
+   * two pieces. Anything the parser can't read a version out of is left alone —
+   * a file we can't rank is not a file we should delete.
+   *
+   * The archive of a currently installed version is never removed, so Re-install
+   * keeps working for whatever the user is actually running.
+   */
+  pruneStagingVersions() {
+    const dir = this.getStagingPath();
+    if (!fs.existsSync(dir)) return [];
+
+    const installedFilenames = new Set();
+    for (const [, m] of this.mods) {
+      if (m.filename) installedFilenames.add(m.filename.toLowerCase());
+    }
+
+    // mod base key -> version string -> [filenames]
+    const groups = new Map();
+    let entries = [];
+    try { entries = fs.readdirSync(dir); } catch { return []; }
+    for (const filename of entries) {
+      if (!/\.(zip|rar|7z)$/i.test(filename)) continue;
+      const parsed = this._parseNexusFilename(filename);
+      if (!parsed?.version) continue;          // unrankable — leave it
+      const key = this._baseName(parsed.name);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, new Map());
+      const byVersion = groups.get(key);
+      if (!byVersion.has(parsed.version)) byVersion.set(parsed.version, []);
+      byVersion.get(parsed.version).push(filename);
+    }
+
+    const removed = [];
+    for (const [key, byVersion] of groups) {
+      if (byVersion.size <= ModManager.STAGING_KEEP_VERSIONS) continue;
+      const ordered = [...byVersion.keys()].sort((a, b) => this._compareVersions(b, a));
+      for (const version of ordered.slice(ModManager.STAGING_KEEP_VERSIONS)) {
+        for (const filename of byVersion.get(version)) {
+          if (installedFilenames.has(filename.toLowerCase())) {
+            console.log(`[staging] keeping ${filename} — it is the installed version`);
+            continue;
+          }
+          try {
+            fs.removeSync(path.join(dir, filename));
+            removed.push(filename);
+            console.log(`[staging] pruned old version: ${filename} (${key} v${version})`);
+          } catch (err) {
+            console.warn(`[staging] could not prune ${filename}:`, err.message);
+          }
+        }
+      }
+    }
+    return removed;
+  }
+
   async addToStaging(filePaths) {
     const added = [];
     for (const src of filePaths) {
@@ -1593,7 +1657,9 @@ class ModManager {
       }
       added.push(filename);
     }
-    return { added, skipped: [] };
+    // A newly added version can push an older one past the retention limit.
+    const pruned = this.pruneStagingVersions();
+    return { added, skipped: [], pruned };
   }
 
   async removeFromStaging(f) {
@@ -2633,6 +2699,10 @@ class ModManager {
       const zipPath = path.join(this.getStagingPath(), filename);
       if (fs.existsSync(zipPath)) fs.removeSync(zipPath);
     }
+
+    // Installing is the other moment the staging folder gains a version, so keep
+    // it trimmed here as well as on add.
+    try { this.pruneStagingVersions(); } catch (err) { console.warn('[staging] prune failed:', err.message); }
 
     // Remove stray copies of this mod's own DLL left elsewhere under plugins/
     // (e.g. a hand-installed TextureReplacer.dll sitting in plugins/ next to the
