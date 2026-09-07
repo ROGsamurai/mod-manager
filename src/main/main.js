@@ -269,8 +269,13 @@ ipcMain.handle('staging:add', async () => {
     filters: [{ name: 'Mod Archives', extensions: ['zip', 'rar', '7z'] }, { name: 'All Files', extensions: ['*'] }],
     properties: ['openFile', 'multiSelections'],
   });
-  if (result.canceled) return { success: false };
-  return { success: true, added: await modManager.addToStaging(result.filePaths) };
+  if (result.canceled) return { success: false, canceled: true };
+  // Spread the result: addToStaging returns { added, skipped, pruned }, and
+  // nesting it under `added` meant the renderer read added.length off an object
+  // (undefined) and saw no skipped/pruned lists at all — so adding archives
+  // reported nothing, and later reported "Mod version already added" for files
+  // that had in fact just been added.
+  return { success: true, ...(await modManager.addToStaging(result.filePaths)) };
 });
 ipcMain.handle('staging:remove', async (_, f) => {
   try { return await modManager.removeFromStaging(f); }
