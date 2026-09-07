@@ -1706,12 +1706,6 @@ class ModManager {
       const ext = path.extname(filename).toLowerCase();
       return `${this._stripDuplicateSuffix(filename.slice(0, -ext.length)).toLowerCase()}${ext}`;
     };
-    const isSuffixedCopy = (filename) => {
-      const ext = path.extname(filename);
-      const stem = filename.slice(0, -ext.length);
-      return this._stripDuplicateSuffix(stem) !== stem;
-    };
-
     const staged = new Map(); // canonical key -> filename already in staging
     try {
       for (const f of fs.readdirSync(dir)) {
@@ -1721,19 +1715,28 @@ class ModManager {
 
     const added = [];
     const skipped = [];
+    const replaced = [];
     for (const src of filePaths) {
       const filename = path.basename(src);
-      // A re-download of something already here is redundant. Skip it BEFORE
-      // moving: these files are moved, not copied, so importing and then
-      // pruning would delete the user's download out of their Downloads folder
-      // and leave nothing behind. Leave the file where it is and say so.
+      const displayName = this._parseNexusFilename(filename).name || filename;
+
+      // Import under the CANONICAL name: "Mod (1).zip" is written as "Mod.zip",
+      // overwriting what is already staged. A re-download is meant to replace
+      // the copy in Downloaded Mods, and normalising the name here means the
+      // browser's suffix never reaches the staging folder in the first place.
+      const ext = path.extname(filename);
+      const destName = `${this._stripDuplicateSuffix(filename.slice(0, filename.length - ext.length))}${ext}`;
+      const dest = path.join(dir, destName);
+      const wasThere = fs.existsSync(dest);
+
+      // A differently-named copy of the same download already staged (e.g. a
+      // "(1)" file from an older build) would otherwise survive alongside the
+      // canonical name.
       const twin = staged.get(canonKey(filename));
-      if (twin && twin !== filename && isSuffixedCopy(filename)) {
-        skipped.push({ filename, reason: 'duplicate', of: twin });
-        console.log(`[staging] skipped ${filename} — already have ${twin}`);
-        continue;
+      if (twin && twin !== destName) {
+        try { fs.removeSync(path.join(dir, twin)); } catch {}
       }
-      const dest = path.join(dir, filename);
+
       try {
         await fs.move(src, dest, { overwrite: true });
       } catch {
@@ -1741,12 +1744,19 @@ class ModManager {
         await fs.copy(src, dest, { overwrite: true });
         try { await fs.remove(src); } catch {}
       }
-      added.push(filename);
-      staged.set(canonKey(filename), filename);
+
+      if (wasThere || (twin && twin !== destName)) {
+        replaced.push({ filename: destName, of: twin || destName, name: displayName });
+        console.log(`[staging] ${destName} replaced the copy already in staging`);
+      } else {
+        added.push(destName);
+      }
+      staged.set(canonKey(destName), destName);
     }
+
     // A newly added version can push an older one past the retention limit.
     const pruned = this.pruneStagingVersions();
-    return { added, skipped, pruned };
+    return { added, skipped, replaced, pruned };
   }
 
   async removeFromStaging(f) {

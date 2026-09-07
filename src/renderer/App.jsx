@@ -200,7 +200,7 @@ function AppInner() {
   const handleAdd = async () => {
     const r = await window.api.addToStaging();
     if (r?.success) {
-      const { added, skipped, pruned } = r;
+      const { added, skipped, replaced, pruned } = r;
       // ONE toast covering everything that happened. There is a single toast
       // slot, so firing "added" then "skipped" then "pruned" meant only the last
       // one was ever visible — a skipped copy could look like nothing happened.
@@ -208,15 +208,18 @@ function AppInner() {
       const others = (skipped || []).length - dupes.length;
       const parts = [];
       if (added?.length) parts.push(`${added.length} ${t('archive(s) added')}`);
-      if (dupes.length) parts.push(`${dupes.length} ${t('already in Downloaded Mods — left in your downloads folder')}`);
-      if (others > 0) parts.push(`${others} ${t('skipped')}`);
+      if (others > 0 || dupes.length) parts.push(`${others + dupes.length} ${t('skipped')}`);
+      if (replaced?.length) {
+        // Name the mod that was overwritten. A bare count read like a claim
+        // about how many files were sitting in the staging folder.
+        const names = [...new Set(replaced.map(x => x.name || x.filename))];
+        parts.push(`${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''} — ${t('replaced in Downloaded Mods')}`);
+      }
       if (pruned?.length) parts.push(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`);
-      // Nothing imported at all: the selection was already in the list. Say so
-      // rather than flashing a success message for work that did not happen.
       const nothingHappened = parts.length === 0;
       if (nothingHappened) parts.push(t('Mod version already added'));
       // Anything the user did not expect stays up longer than a success flash.
-      const noteworthy = nothingHappened || dupes.length > 0 || others > 0 || pruned?.length > 0;
+      const noteworthy = nothingHappened || dupes.length > 0 || others > 0 || replaced?.length > 0 || pruned?.length > 0;
       notify(parts.join(' · '), noteworthy ? 'warn' : 'success', noteworthy ? 7000 : undefined);
       await refreshStaged();
     }
