@@ -1321,7 +1321,7 @@ class ModManager {
     const installed = new Map();
     for (const mod of this.mods.values()) {
       const key = this._baseName(mod.name);
-      if (key) installed.set(key, { version: mod.version || '', installedAt: mod.installedAt || '', archiveMtime: mod.archiveMtime || 0 });
+      if (key) installed.set(key, { version: mod.version || '', installedAt: mod.installedAt || '', archiveMtime: mod.archiveMtime || 0, filename: mod.filename || '' });
     }
 
     // List directory entries. If the whole readdir fails (rare — usually permissions
@@ -1406,7 +1406,17 @@ class ModManager {
         if (inst.archiveMtime) installedRefMs = inst.archiveMtime;
         else if (inst.installedAt) installedRefMs = Date.parse(inst.installedAt);
       }
-      const newerDownload = !!newest.mtime && !isNaN(installedRefMs) && newest.mtime > installedRefMs + 1000;
+      // A duplicate download of the archive this mod was installed from
+      // ("Mod (2).zip") is byte-identical to what is already installed, but its
+      // mtime is whenever the browser wrote it — always newer. Without this it
+      // read as an "Update" to the same version it already had. Compare names
+      // with the copy suffix stripped so a copy is correctly a Re-install.
+      const canonName = (f) => {
+        const ext = path.extname(f || '');
+        return this._stripDuplicateSuffix((f || '').slice(0, f.length - ext.length)).toLowerCase();
+      };
+      const sameDownload = !!(inst && inst.filename) && canonName(newest.filename) === canonName(inst.filename);
+      const newerDownload = !sameDownload && !!newest.mtime && !isNaN(installedRefMs) && newest.mtime > installedRefMs + 1000;
       let status = 'new';
       if (inst !== undefined && newest.parsedVersion && installedVersion) {
         const cmp = this._compareVersions(newest.parsedVersion, installedVersion);

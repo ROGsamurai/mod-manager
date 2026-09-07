@@ -40,10 +40,10 @@ function AppInner() {
   // have an older timer clear a newer toast (and so it is cancelled on unmount).
   const toastTimer = useRef(null);
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
-  const notify = useCallback((msg, type = 'info') => {
+  const notify = useCallback((msg, type = 'info', ms = 3200) => {
     setToast({ msg, type });
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null; }, 3200);
+    toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null; }, ms);
   }, []);
   const refreshMods = async () => { setMods(await window.api.getInstalledMods()); setConflicts(await window.api.getConflicts()); };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
@@ -201,16 +201,20 @@ function AppInner() {
     const r = await window.api.addToStaging();
     if (r?.success) {
       const { added, skipped, pruned } = r;
-      if (added?.length) notify(`${added.length} archive(s) added`, 'success');
-      // Say WHY something was skipped. A silent skip looks like the file failed
-      // to import; these are copies of something already in the list, and they
-      // are left untouched wherever the user downloaded them.
+      // ONE toast covering everything that happened. There is a single toast
+      // slot, so firing "added" then "skipped" then "pruned" meant only the last
+      // one was ever visible — a skipped copy could look like nothing happened.
       const dupes = (skipped || []).filter(x => x?.reason === 'duplicate');
       const others = (skipped || []).length - dupes.length;
-      if (dupes.length) notify(`${dupes.length} ${t('already in Downloaded Mods — left in your downloads folder')}`, 'warn');
-      if (others > 0) notify(`${others} ${t('skipped')}`, 'warn');
-      // Say when old versions were cleaned up, so files never vanish silently.
-      if (pruned?.length) notify(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`, 'success');
+      const parts = [];
+      if (added?.length) parts.push(`${added.length} ${t('archive(s) added')}`);
+      if (dupes.length) parts.push(`${dupes.length} ${t('already in Downloaded Mods — left in your downloads folder')}`);
+      if (others > 0) parts.push(`${others} ${t('skipped')}`);
+      if (pruned?.length) parts.push(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`);
+      if (parts.length === 0) parts.push(t('Nothing to add'));
+      // Anything the user did not expect stays up longer than a success flash.
+      const noteworthy = dupes.length > 0 || others > 0 || pruned?.length > 0;
+      notify(parts.join(' · '), noteworthy ? 'warn' : 'success', noteworthy ? 7000 : undefined);
       await refreshStaged();
     }
   };
