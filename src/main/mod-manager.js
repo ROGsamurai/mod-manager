@@ -1583,8 +1583,11 @@ class ModManager {
   static get STAGING_KEEP_VERSIONS() { return 2; }
 
   /**
-   * Delete stale archives from the staging folder, keeping the newest
-   * STAGING_KEEP_VERSIONS versions of each mod.
+   * Delete stale archives from the staging folder.
+   *
+   * Two passes: duplicate downloads of the same file ("Mod (1).zip") are
+   * reduced to one, then only the newest STAGING_KEEP_VERSIONS versions of each
+   * mod are kept.
    *
    * Grouping is by mod, and retention is by VERSION rather than by file: a mod
    * with a plain download plus an optional-file variant of the same version
@@ -1604,10 +1607,52 @@ class ModManager {
       if (m.filename) installedFilenames.add(m.filename.toLowerCase());
     }
 
-    // mod base key -> version string -> [filenames]
-    const groups = new Map();
     let entries = [];
     try { entries = fs.readdirSync(dir); } catch { return []; }
+
+    const removed = [];
+
+    // ── Pass 1: drop duplicate downloads of the SAME file ──────────────────
+    // "Mod.zip", "Mod (1).zip" and "Mod (2).zip" are one download fetched three
+    // times. Version retention alone never removes them, because they are all
+    // the same version. Files are only treated as copies when their names are
+    // identical once the browser's suffix is stripped, so an optional-file
+    // variant ("... (HQ Base Game Sprites).zip") is never mistaken for a copy.
+    // The extension is part of the key too — a .zip and a .7z of the same mod
+    // are different downloads, not copies.
+    const copies = new Map(); // canonical "stem.ext" -> [filenames]
+    for (const filename of entries) {
+      if (!/\.(zip|rar|7z)$/i.test(filename)) continue;
+      const ext = path.extname(filename).toLowerCase();
+      const stem = this._stripDuplicateSuffix(filename.slice(0, -ext.length));
+      const key = `${stem.toLowerCase()}${ext}`;
+      if (!copies.has(key)) copies.set(key, []);
+      copies.get(key).push(filename);
+    }
+    for (const [, group] of copies) {
+      if (group.length < 2) continue;
+      // Keep the installed one if that is the copy on record, otherwise the
+      // name with no suffix, otherwise the first alphabetically.
+      const keep =
+        group.find(f => installedFilenames.has(f.toLowerCase())) ||
+        group.find(f => this._stripDuplicateSuffix(f.slice(0, -path.extname(f).length)) === f.slice(0, -path.extname(f).length)) ||
+        [...group].sort()[0];
+      for (const filename of group) {
+        if (filename === keep) continue;
+        try {
+          fs.removeSync(path.join(dir, filename));
+          removed.push(filename);
+          console.log(`[staging] pruned duplicate download: ${filename} (kept ${keep})`);
+        } catch (err) {
+          console.warn(`[staging] could not prune ${filename}:`, err.message);
+        }
+      }
+    }
+    entries = entries.filter(f => !removed.includes(f));
+
+    // ── Pass 2: keep only the newest STAGING_KEEP_VERSIONS versions ────────
+    // mod base key -> version string -> [filenames]
+    const groups = new Map();
     for (const filename of entries) {
       if (!/\.(zip|rar|7z)$/i.test(filename)) continue;
       const parsed = this._parseNexusFilename(filename);
@@ -1620,7 +1665,6 @@ class ModManager {
       byVersion.get(parsed.version).push(filename);
     }
 
-    const removed = [];
     for (const [key, byVersion] of groups) {
       if (byVersion.size <= ModManager.STAGING_KEEP_VERSIONS) continue;
       const ordered = [...byVersion.keys()].sort((a, b) => this._compareVersions(b, a));
