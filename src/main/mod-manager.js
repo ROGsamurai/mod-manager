@@ -1621,6 +1621,7 @@ class ModManager {
     try { entries = fs.readdirSync(dir); } catch { return []; }
 
     const removed = [];
+    const renamed = [];
 
     // ── Pass 1: drop duplicate downloads of the SAME file ──────────────────
     // "Mod.zip", "Mod (1).zip" and "Mod (2).zip" are one download fetched three
@@ -1639,13 +1640,15 @@ class ModManager {
       if (!copies.has(key)) copies.set(key, []);
       copies.get(key).push(filename);
     }
-    for (const [, group] of copies) {
-      if (group.length < 2) continue;
+    const stemOf = (f) => f.slice(0, f.length - path.extname(f).length);
+    const isCopyName = (f) => this._stripDuplicateSuffix(stemOf(f)) !== stemOf(f);
+
+    for (const [key, group] of copies) {
       // Keep the installed one if that is the copy on record, otherwise the
       // name with no suffix, otherwise the first alphabetically.
       const keep =
         group.find(f => installedFilenames.has(f.toLowerCase())) ||
-        group.find(f => this._stripDuplicateSuffix(f.slice(0, -path.extname(f).length)) === f.slice(0, -path.extname(f).length)) ||
+        group.find(f => !isCopyName(f)) ||
         [...group].sort()[0];
       for (const filename of group) {
         if (filename === keep) continue;
@@ -1657,8 +1660,42 @@ class ModManager {
           console.warn(`[staging] could not prune ${filename}:`, err.message);
         }
       }
+      // A copy dropped into the folder by hand keeps its "(1)" / "- Copy" name,
+      // which parses as a different mod and shows up as a phantom Update or
+      // Downgrade row. Rename the survivor to the proper name so the suffix
+      // never survives in the staging folder — whether the manager put the file
+      // there or the user did. Renaming rather than deleting matters when the
+      // copy is the ONLY archive of that mod: deleting it would take the mod out
+      // of Downloaded Mods entirely.
+      if (isCopyName(keep)) {
+        const target = `${this._stripDuplicateSuffix(stemOf(keep))}${path.extname(keep)}`;
+        const targetPath = path.join(dir, target);
+        try {
+          if (fs.existsSync(targetPath)) {
+            fs.removeSync(path.join(dir, keep));
+            removed.push(keep);
+            console.log(`[staging] pruned duplicate download: ${keep} (kept ${target})`);
+          } else {
+            fs.renameSync(path.join(dir, keep), targetPath);
+            renamed.push({ from: keep, to: target });
+            // Keep the DB honest: a mod installed from the copy still records
+            // the old name, and that name is what protects its archive from
+            // version pruning and drives the Re-install row.
+            let dbChanged = false;
+            for (const [, mod] of this.mods) {
+              if (mod.filename === keep) { mod.filename = target; dbChanged = true; }
+            }
+            if (dbChanged) this._saveDb();
+            console.log(`[staging] renamed hand-added copy: ${keep} -> ${target}`);
+          }
+        } catch (err) {
+          console.warn(`[staging] could not normalise ${keep}:`, err.message);
+        }
+      }
     }
-    entries = entries.filter(f => !removed.includes(f));
+    entries = entries
+      .filter(f => !removed.includes(f))
+      .map(f => (renamed.find(r => r.from === f)?.to) || f);
 
     // ── Pass 2: keep only the newest STAGING_KEEP_VERSIONS versions ────────
     // mod base key -> version string -> [filenames]

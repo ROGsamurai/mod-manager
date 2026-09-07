@@ -182,6 +182,13 @@ function watchStaging() {
   const notify = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
+      // Files can arrive in the staging folder without going through the app —
+      // dragged in from Explorer, restored from a backup, copied off a USB
+      // stick. Normalise them here too, so a hand-added "Mod (1).zip" never
+      // shows up as a phantom Update or Downgrade of the mod it is a copy of.
+      try { modManager.pruneStagingVersions(); } catch (err) {
+        console.warn('[staging watcher] prune failed:', err.message);
+      }
       mainWindow.webContents.send('staging:changed', modManager.getStagedFiles());
     } catch (err) {
       console.warn('[staging watcher] notify failed:', err.message);
@@ -262,7 +269,14 @@ ipcMain.handle('game:bepinex-health', () => {
 });
 
 // Staging
-ipcMain.handle('staging:list', () => { try { return modManager.getStagedFiles(); } catch (e) { console.error('[staging:list]', e); return []; } });
+ipcMain.handle('staging:list', () => {
+  try {
+    // Covers copies that were dropped in while the app was closed — the watcher
+    // only sees changes made while it is running.
+    try { modManager.pruneStagingVersions(); } catch (e) { console.warn('[staging:list] prune failed:', e.message); }
+    return modManager.getStagedFiles();
+  } catch (e) { console.error('[staging:list]', e); return []; }
+});
 ipcMain.handle('staging:add', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Select mod archive(s)',
