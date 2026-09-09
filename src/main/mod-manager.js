@@ -1302,7 +1302,13 @@ class ModManager {
       // Downloaded Mods and updating it created a second Installed Mods entry
       // instead of replacing the first.
       .replace(/[\s\-_]+/g, ' ')
-      .trim();
+      .trim()
+      // Drop a leading ordering prefix ("01 Base Expansions", "02 - Gym
+      // Expansions"). Authors use these to order a mod's file list and they can
+      // be renumbered or dropped between uploads, which would otherwise make the
+      // re-upload look like a different mod. Verified against every name in the
+      // known-mods list: no two mods differ only by this prefix.
+      .replace(/^\d{1,2}\s+/, '');
   }
 
   /** Compare two version strings. Returns 1 if a > b, -1 if a < b, 0 if equal */
@@ -4057,6 +4063,13 @@ class ModManager {
     const installedNames = new Set();
     const installedFiles = new Set();
 
+    // Compare names with every separator removed. These checks used to strip
+    // only whitespace, so "Phone - Overhaul" became "phone-overhaul" and never
+    // matched "phoneoverhaul" — the mod failed to recognise ITSELF and reported
+    // "Missing: Phone Overhaul" on its own row. Mod names arrive spelled both
+    // ways depending on which Nexus filename format the download used.
+    const ident = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
     for (const mod of this.mods.values()) {
       installedNames.add(mod.name.toLowerCase());
       if (mod.files) {
@@ -4108,16 +4121,19 @@ class ModManager {
       'texturereplacer': 'TextureReplacer',
     };
 
+    // Look the map up by normalised name too, so "Phone - Overhaul" finds the
+    // 'phone overhaul' entry.
+    const DEPS_BY_IDENT = new Map(Object.entries(DEPENDENCIES).map(([k, v]) => [ident(k), v]));
+
     for (const mod of this.mods.values()) {
-      const modLower = mod.name.toLowerCase();
-      const deps = DEPENDENCIES[modLower];
+      const deps = DEPS_BY_IDENT.get(ident(mod.name));
       if (!deps) continue;
 
       for (const dep of deps) {
         // Check if dependency is installed (by name match or DLL match)
         const depInstalled = [...this.mods.values()].some(m => {
-          const mLower = m.name.toLowerCase().replace(/\s+/g, '');
-          const depNorm = dep.replace(/\s+/g, '');
+          const mLower = ident(m.name);
+          const depNorm = ident(dep);
           return mLower.includes(depNorm) || depNorm.includes(mLower);
         });
 
@@ -4132,14 +4148,11 @@ class ModManager {
     }
 
     // Auto-detect: any mod with _prefabloader in its files needs Enhanced Prefab Loader
-    const hasEPL = [...this.mods.values()].some(m => {
-      const n = m.name.toLowerCase().replace(/\s+/g, '');
-      return n.includes('enhancedprefabloader');
-    });
+    const hasEPL = [...this.mods.values()].some(m => ident(m.name).includes('enhancedprefabloader'));
     if (!hasEPL) {
       for (const mod of this.mods.values()) {
         // Skip if this mod IS the prefab loader
-        if (mod.name.toLowerCase().replace(/\s+/g, '').includes('enhancedprefabloader')) continue;
+        if (ident(mod.name).includes('enhancedprefabloader')) continue;
         // Skip if already warned via the hardcoded map
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Enhanced Prefab Loader')) continue;
         // Check files for _prefabloader
@@ -4154,13 +4167,10 @@ class ModManager {
     }
 
     // Auto-detect: any mod with "Expansions" in name needs Holographic Overhaul
-    const hasHoloOverhaul = [...this.mods.values()].some(m => {
-      const n = m.name.toLowerCase().replace(/\s+/g, '');
-      return n.includes('holographicoverhaul');
-    });
+    const hasHoloOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('holographicoverhaul'));
     if (!hasHoloOverhaul) {
       for (const mod of this.mods.values()) {
-        if (mod.name.toLowerCase().includes('holographic overhaul')) continue;
+        if (ident(mod.name).includes('holographicoverhaul')) continue;
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Holographic Overhaul')) continue;
         if (mod.name.toLowerCase().includes('expansion')) {
           warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Holographic Overhaul' });
@@ -4169,13 +4179,10 @@ class ModManager {
     }
 
     // Auto-detect: any mod with Phone - Overhaul/ in its files needs Phone Overhaul
-    const hasPhoneOverhaul = [...this.mods.values()].some(m => {
-      const n = m.name.toLowerCase().replace(/\s+/g, '');
-      return n.includes('phoneoverhaul');
-    });
+    const hasPhoneOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('phoneoverhaul'));
     if (!hasPhoneOverhaul) {
       for (const mod of this.mods.values()) {
-        if (mod.name.toLowerCase().replace(/\s+/g, '').includes('phoneoverhaul')) continue;
+        if (ident(mod.name).includes('phoneoverhaul')) continue;
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Phone Overhaul')) continue;
         if (mod.files && mod.files.some(f => /phone\s*-\s*overhaul[/\\]/i.test(f))) {
           warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Phone Overhaul' });
@@ -4186,7 +4193,7 @@ class ModManager {
     // Auto-detect: any mod with Holographic Overhaul/ in its files needs Holographic Overhaul
     if (!hasHoloOverhaul) {
       for (const mod of this.mods.values()) {
-        if (mod.name.toLowerCase().includes('holographic overhaul')) continue;
+        if (ident(mod.name).includes('holographicoverhaul')) continue;
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Holographic Overhaul')) continue;
         if (mod.files && mod.files.some(f => /holographic.overhaul[/\\]/i.test(f))) {
           warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Holographic Overhaul' });
@@ -4195,13 +4202,10 @@ class ModManager {
     }
 
     // Auto-detect: any mod with TextureReplacer/ in its files needs TextureReplacer
-    const hasTR = [...this.mods.values()].some(m => {
-      const n = m.name.toLowerCase().replace(/\s+/g, '');
-      return n.includes('texturereplacer');
-    });
+    const hasTR = [...this.mods.values()].some(m => ident(m.name).includes('texturereplacer'));
     if (!hasTR) {
       for (const mod of this.mods.values()) {
-        if (mod.name.toLowerCase().replace(/\s+/g, '').includes('texturereplacer')) continue;
+        if (ident(mod.name).includes('texturereplacer')) continue;
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'TextureReplacer')) continue;
         if (mod.files && mod.files.some(f => /texturereplacer[/\\]/i.test(f))) {
           warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'TextureReplacer' });
