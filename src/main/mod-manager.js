@@ -1294,6 +1294,14 @@ class ModManager {
       // and "Base Set 2" is a name, not "Base Set" v2. This mirrors the version
       // rule in _parseNexusFilename so the two stay consistent.
       .replace(/\s*(?:v\d+(?:\.\d+)*|\d+(?:\.\d+)+)\s*$/i, '')
+      // Finally, normalise separators. The two Nexus filename formats disagree
+      // about them for the same mod: "Phone - Overhaul-685-1-7-2-....zip" parses
+      // to "Phone Overhaul" (the old format turns its hyphens into spaces) while
+      // "Phone - Overhaul 685 1.9.0 ....zip" keeps "Phone - Overhaul". Without
+      // this they are two different base keys, so one mod showed as two rows in
+      // Downloaded Mods and updating it created a second Installed Mods entry
+      // instead of replacing the first.
+      .replace(/[\s\-_]+/g, ' ')
       .trim();
   }
 
