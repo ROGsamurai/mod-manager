@@ -1,0 +1,12 @@
+# Keep LF in the repository regardless of anyone's core.autocrlf setting.
+* text=auto eol=lf
+
+# ...except the Windows batch scripts, which want CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never touch binaries.
+*.png binary
+*.ico binary
+*.zip binary
+*.dll binary

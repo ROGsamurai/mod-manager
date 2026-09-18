@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
+import { APP_VERSION } from '../version';
 
 export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notify, onRefreshMods, onRefreshStaged, onSetBepinex }) {
   const { t } = useI18n();
@@ -11,7 +12,12 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
   const [healthCheck, setHealthCheck] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [dupBusy, setDupBusy] = useState(false);
+  const [upd, setUpd] = useState({ enabled: false, manifestUrl: '' });
+  const [updBusy, setUpdBusy] = useState(false);
+  const [updResult, setUpdResult] = useState(null);
   const [regroupBusy, setRegroupBusy] = useState(false);
+
+  useEffect(() => { window.api.getUpdateSettings().then(r => r && setUpd(r)).catch(() => {}); }, []);
 
   useEffect(() => {
     window.api.getDeleteAfterInstall().then(setDeleteAfterInstall).catch(e => console.error('[getDeleteAfterInstall]', e));
@@ -51,15 +57,23 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
 
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
-      <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
-      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>⚙️ {t('Settings')}</h2>
+      <div style={{ padding: 24, maxWidth: 1180, margin: '0 auto' }}>
+      <h1 className="page-title">{t('Settings')}</h1>
+      <p className="page-sub" style={{ marginBottom: 20 }}>{t('Game folder, mod status and maintenance.')}</p>
+      {/* Two fixed columns rather than CSS columns. With `columns` the browser
+          rebalances by height, so expanding the Health Check results shoved the
+          Mod Management panel into the other column. Panels now stay where they
+          are whatever their content does, and the grid falls back to a single
+          column when the window is too narrow for two. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(430px, 1fr))', gap: 18, alignItems: 'start' }}>
+        <div>
       <S title={t('Game Location')}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{ flex: 1, padding: '10px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-2)', borderRadius: 'var(--radius)', fontSize: 14, fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: gamePath ? 'var(--text-2)' : 'var(--text-4)' }}>
             {gamePath || t('Not Installed')}
           </div>
-          <button className="btn btn-ghost" onClick={onSetPath} style={{ borderColor: 'var(--info)' }}>{t('Browse')}</button>
-          <button className="btn btn-ghost" onClick={onDetect} style={{ borderColor: 'var(--accent)' }}>{t('Auto-Detect')}</button>
+          <button className="btn btn-ghost" onClick={onSetPath} >{t('Browse')}</button>
+          <button className="btn btn-ghost" onClick={onDetect} >{t('Auto-Detect')}</button>
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-4)', lineHeight: 1.6 }}>
           {t('Point this to the folder containing "Card Shop Simulator.exe".')}<br />
@@ -70,9 +84,9 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
         {/* Game executable check — shown first because BepInEx (and every mod)
             is meaningless if the game folder itself is wrong. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.gameFound ? 'var(--green-bright)' : 'var(--red-bright)' }} />
-          <span style={{ fontSize: 16, fontWeight: 600 }}>
-            {bepinex.gameFound ? t('Game detected ✓') : t('Game not detected')}
+          <span className={`dot ${bepinex.gameFound ? 'dot-ok' : 'dot-bad'}`} />
+          <span style={{ fontSize: 15, fontWeight: 600 }}>
+            {bepinex.gameFound ? t('Game detected') : t('Game not detected')}
           </span>
         </div>
         {!bepinex.gameFound && (
@@ -81,8 +95,8 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.installed ? 'var(--green-bright)' : 'var(--red-bright)' }} />
-          <span style={{ fontSize: 16, fontWeight: 600 }}>{bepinex.installed ? t('BepInEx Installed ✓') : t('BepInEx Not Installed')}</span>
+          <span className={`dot ${bepinex.installed ? 'dot-ok' : 'dot-bad'}`} />
+          <span style={{ fontSize: 15, fontWeight: 600 }}>{bepinex.installed ? t('BepInEx Installed') : t('BepInEx Not Installed')}</span>
         </div>
         <div style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.7, marginBottom: 12 }}>
           {bepinex.installed ? t('BepInEx is ready. Plugin mods should extract to "BepInEx / plugins".') : bepinex.reason}
@@ -92,9 +106,9 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
             while BepInEx silently skips it. Refreshes with the rest of the
             status, not only when the Health Check is run. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ width: 14, height: 14, borderRadius: '50%', background: bepinex.duplicateCount > 0 ? 'var(--red-bright)' : 'var(--green-bright)' }} />
-          <span style={{ fontSize: 16, fontWeight: 600 }}>
-            {bepinex.duplicateCount > 0 ? t('Duplicate Mods Found') : t('No Duplicate Mods ✓')}
+          <span className={`dot ${bepinex.duplicateCount > 0 ? 'dot-bad' : 'dot-ok'}`} />
+          <span style={{ fontSize: 15, fontWeight: 600 }}>
+            {bepinex.duplicateCount > 0 ? t('Duplicate Mods Found') : t('No Duplicate Mods')}
           </span>
           {bepinex.duplicateCount > 0 && (
             <button className="btn btn-accent btn-sm" disabled={dupBusy} onClick={async () => {
@@ -105,7 +119,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
               setDupBusy(false);
               if (r?.success) notify(`${r.removed.length} ${t('duplicate DLLs removed')}`, 'success');
               else notify(r?.error || t('Could not remove duplicates'), 'error');
-            }}>{dupBusy ? '⏳' : '🧹'} {t('Remove duplicates')}</button>
+            }}>{dupBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Remove duplicates')}</button>
           )}
         </div>
         <div style={{ fontSize: 14, color: bepinex.duplicateCount > 0 ? 'var(--red-bright)' : 'var(--text-3)', lineHeight: 1.7, marginBottom: 12 }}>
@@ -113,18 +127,43 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
             ? `${t('More than one copy of')} ${(bepinex.duplicateDlls || []).join(', ')} ${t('is installed. BepInEx loads only one, so the mod can appear enabled while doing nothing.')}`
             : t('No plugin is installed twice.')}
         </div>
+      </S>
+      <S title={t('Mod Management')}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost" onClick={() => window.api.openStagingFolder()} >{t('Open Staging Folder')}</button>
+          <button className="btn btn-ghost" onClick={() => window.api.openGameFolder()} >{t('Open Game Folder')}</button>
+          <button className="btn btn-ghost" onClick={() => window.api.openSavesFolder()} >{t('Open Save Game Folder')}</button>
+        </div>
+        <Opt title={t('Delete zip from staging folder after installing')}
+          hint={t('When enabled, the .zip file is removed from the staging folder as soon as the mod is installed.')} last>
+          <Toggle on={deleteAfterInstall} onChange={toggleDelete} label={t('Delete zip from staging folder after installing')} />
+        </Opt>
+        <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 18 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button className="btn btn-ghost" disabled={regroupBusy} onClick={doRegroupAll}>
+              {regroupBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Re-apply Auto-Grouping')}
+            </button>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-4)' }}>
+            {t('Re-runs author-detection rules (DraX / HellHound / Munchmatoast / Knarf247 / Main Core) against all currently-installed mods. Only moves ungrouped mods; manually-placed mods are preserved.')}
+          </div>
+        </div>
+      </S>
+        </div>
+        <div>
+      <S title={t('Health Check')}>
         <button className="btn btn-ghost" onClick={async () => { setHealthBusy(true); setHealthCheck(await window.api.bepinexHealthCheck()); setHealthBusy(false); }} disabled={healthBusy} style={{ borderColor: 'var(--green-bright)' }}>
-          {healthBusy ? '⏳' : '🩺'} {t('Health Check')}
+          {healthBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Health Check')}
         </button>
         {healthCheck && (
           <div style={{ marginTop: 12, padding: 14, background: 'var(--bg-base)', borderRadius: 'var(--radius)', border: `1px solid ${healthCheck.ok ? 'var(--green)' : 'var(--red)'}` }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: healthCheck.ok ? 'var(--green-bright)' : 'var(--red-bright)' }}>
-              {healthCheck.ok ? `✅ ${t('All checks passed')}` : `❌ ${t('Issues found')}`}
+              {healthCheck.ok ? t('All checks passed') : t('Issues found')}
             </div>
             {healthCheck.checks.map((c, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 13, borderBottom: i < healthCheck.checks.length - 1 ? '1px solid var(--border)' : 'none' }}>
                 <span style={{ fontSize: 14, width: 20, textAlign: 'center' }}>
-                  {c.status === 'ok' ? '✅' : c.status === 'warn' ? '⚠️' : '❌'}
+                  {c.status === 'ok' ? (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green-bright)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>) : c.status === 'warn' ? (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>) : (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--red-bright)" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>)}
                 </span>
                 <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-2)', minWidth: 160 }}>{c.file}</span>
                 <span style={{ color: c.status === 'ok' ? 'var(--text-4)' : c.status === 'warn' ? 'var(--accent)' : 'var(--red-bright)', flex: 1 }}>{c.detail}</span>
@@ -136,59 +175,83 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
                     setHealthBusy(false);
                     if (r?.success) notify(`${t('Removed')} ${r.removed.length} ${t('duplicate DLLs removed')}`, 'success');
                     else notify(r?.error || t('Could not remove duplicates'), 'error');
-                  }}>🧹 {t('Remove duplicates')}</button>
+                  }}>{t('Remove duplicates')}</button>
                 )}
               </div>
             ))}
             {!healthCheck.ok && (
               <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 10, lineHeight: 1.6 }}>
-                {t('If BepInEx was working before, try restarting your PC. If files are missing, reinstall BepInEx from the Recommended Mods tab.')}
+                {t('If BepInEx was working before, try restarting your PC. If files are missing, reinstall BepInEx from the Getting Started tab.')}
               </div>
             )}
           </div>
         )}
       </S>
-      <S title={t('Mod Management')}>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-          <button className="btn btn-ghost" onClick={() => window.api.openStagingFolder()} style={{ borderColor: 'var(--info)' }}>📂 {t('Open Staging Folder')}</button>
-          <button className="btn btn-ghost" onClick={() => window.api.openGameFolder()} style={{ borderColor: 'var(--info)' }}>🎮 {t('Open Game Folder')}</button>
-          <button className="btn btn-ghost" onClick={() => window.api.openSavesFolder()} style={{ borderColor: 'var(--info)' }}>💾 {t('Open Save Game Folder')}</button>
-        </div>
-        <label onClick={toggleDelete} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 15, color: 'var(--text-2)' }}>
-          <div style={{ width: 20, height: 20, borderRadius: 3, border: '2px solid var(--border-2)', background: deleteAfterInstall ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', flexShrink: 0 }}>
-            {deleteAfterInstall && <span style={{ color: 'var(--bg-deep)', fontSize: 14, fontWeight: 700 }}>✓</span>}
-          </div>
-          {t('Delete zip from staging folder after installing')}
-        </label>
-        <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 6, marginLeft: 32, marginBottom: 18 }}>
-          {t('When enabled, the .zip file is removed from the staging folder as soon as the mod is installed.')}
-        </div>
-        <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)', marginBottom: 18 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <button className="btn btn-ghost" disabled={regroupBusy} onClick={doRegroupAll} style={{ borderColor: 'var(--accent)' }}>
-              {regroupBusy ? '⏳' : '📁'} {t('Re-apply Auto-Grouping')}
+      <S title={t('System')}>
+        <Opt title={t('Minimize to system tray when closing')}
+          hint={t('When enabled, closing the window hides the app to the system tray instead of quitting. Right-click the tray icon to quit.')}>
+          <Toggle on={minimizeToTray} onChange={toggleTray} label={t('Minimize to system tray when closing')} />
+        </Opt>
+        <Opt title={t('Minimize button sends to system tray')}
+          hint={t('When enabled, the minimize button hides the app to the system tray instead of the taskbar.')}>
+          <Toggle on={minimizeBtnToTray} onChange={toggleBtnTray} label={t('Minimize button sends to system tray')} />
+        </Opt>
+        <Opt title={t('Open App Data Folder')} hint={t('Opens the folder where settings and mod database are stored.')} last>
+          <button className="btn btn-ghost btn-sm" onClick={() => window.api.openAppDataFolder()}>{t('Open')}</button>
+        </Opt>
+      </S>
+      <S title={t('Mod Updates')}>
+        <Opt title={t('Check for mod updates')}
+          hint={t('Compares your installed mods against a published version list. The manager never contacts Nexus Mods directly and no API key is needed.')}>
+          <Toggle on={upd.enabled} label={t('Check for mod updates')} onChange={async () => {
+            const r = await window.api.setUpdateSettings({ enabled: !upd.enabled });
+            setUpd(r); setUpdResult(null);
+            if (r.enabled) onRefreshMods?.();
+          }} />
+        </Opt>
+        <div style={{ paddingTop: 12 }}>
+          <label className="label" htmlFor="manifest-url">{t('Version list URL')}</label>
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <input id="manifest-url" className="input" style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 12.5 }}
+              placeholder="https://raw.githubusercontent.com/<user>/<repo>/main/versions.json"
+              value={upd.manifestUrl} onChange={e => setUpd({ ...upd, manifestUrl: e.target.value })}
+              onBlur={async () => setUpd(await window.api.setUpdateSettings({ manifestUrl: upd.manifestUrl }))} />
+            <button className="btn btn-ghost" disabled={updBusy || !upd.enabled} onClick={async () => {
+              setUpdBusy(true);
+              await window.api.setUpdateSettings({ manifestUrl: upd.manifestUrl });
+              const r = await window.api.checkUpdates(true);
+              setUpdResult(r); setUpdBusy(false);
+              onRefreshMods?.();
+            }}>
+              {updBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Check Now')}
             </button>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-4)' }}>
-            {t('Re-runs author-detection rules (DraX / HellHound / Munchmatoast / Knarf247 / Main Core) against all currently-installed mods. Only moves ungrouped mods; manually-placed mods are preserved.')}
-          </div>
+          {updResult && (
+            <div style={{ fontSize: 13, marginTop: 10, color: updResult.error ? 'var(--red-bright)' : 'var(--text-3)' }}>
+              {updResult.error
+                ? `${t('Check failed')}: ${updResult.error}`
+                : `${Object.keys(updResult.updates || {}).length} ${t('updates found')}`}
+            </div>
+          )}
         </div>
-        <div style={{ paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+      </S>
+      <S title={t('Fresh Install')} danger>
+        <div>
           {!confirmFresh ? (
             <button className="btn btn-danger" onClick={() => setConfirmFresh(true)}>
-              🔄 {t('Fresh Install')}
+              {t('Fresh Install')}
             </button>
           ) : (
-            <div style={{ padding: 14, background: 'rgba(192,57,43,.1)', border: '1px solid var(--red)', borderRadius: 'var(--radius)' }}>
+            <div style={{ padding: 14, background: 'var(--red-soft)', border: '1px solid var(--red-border)', borderRadius: 'var(--radius)' }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--red-bright)', marginBottom: 8 }}>
-                ⚠️ {t('Are you sure?')}
+                {t('Are you sure?')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 12, lineHeight: 1.6 }}>
                 {t('This will delete everything in BepInEx except your config files. All mods will be removed and need to be reinstalled.')}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-danger" onClick={doFreshInstall} disabled={freshBusy}>
-                  {freshBusy ? '⏳' : '🗑'} {t('Yes, wipe everything')}
+                  {freshBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Yes, wipe everything')}
                 </button>
                 <button className="btn btn-ghost" onClick={() => setConfirmFresh(false)}>
                   {t('Cancel')}
@@ -201,33 +264,9 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
           </div>
         </div>
       </S>
-      <S title={t('System')}>
-        <label onClick={toggleTray} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 15, color: 'var(--text-2)' }}>
-          <div style={{ width: 20, height: 20, borderRadius: 3, border: '2px solid var(--border-2)', background: minimizeToTray ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', flexShrink: 0 }}>
-            {minimizeToTray && <span style={{ color: 'var(--bg-deep)', fontSize: 14, fontWeight: 700 }}>✓</span>}
-          </div>
-          {t('Minimize to system tray when closing')}
-        </label>
-        <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 6, marginLeft: 32, marginBottom: 18 }}>
-          {t('When enabled, closing the window hides the app to the system tray instead of quitting. Right-click the tray icon to quit.')}
-        </div>
-        <label onClick={toggleBtnTray} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 15, color: 'var(--text-2)' }}>
-          <div style={{ width: 20, height: 20, borderRadius: 3, border: '2px solid var(--border-2)', background: minimizeBtnToTray ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', flexShrink: 0 }}>
-            {minimizeBtnToTray && <span style={{ color: 'var(--bg-deep)', fontSize: 14, fontWeight: 700 }}>✓</span>}
-          </div>
-          {t('Minimize button sends to system tray')}
-        </label>
-        <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 6, marginLeft: 32, marginBottom: 18 }}>
-          {t('When enabled, the minimize button hides the app to the system tray instead of the taskbar.')}
-        </div>
-        <button className="btn btn-ghost" onClick={() => window.api.openAppDataFolder()} style={{ borderColor: 'var(--info)' }}>🗂️ {t('Open App Data Folder')}</button>
-        <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 6 }}>
-          {t('Opens the folder where settings and mod database are stored.')}
-        </div>
-      </S>
       <S title={t('About')}>
         <div style={{ fontSize: 13, color: 'var(--text-4)', lineHeight: 1.9 }}>
-          TCG Card Shop Mod Manager v1.1.8 — {t('Portable Edition')}<br />
+          TCG Card Shop Mod Manager v{APP_VERSION} — {t('Portable Edition')}<br />
           {t('Local, offline mod manager. No API keys, no accounts, no tracking.')}<br />
           {t('Staging folder lives right next to the .exe')}
         </div>
@@ -242,7 +281,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
               background: '#5865F2', color: '#fff', fontWeight: 600,
               display: 'inline-flex', alignItems: 'center', gap: 8,
             }}>
-            <span style={{ fontSize: 16 }}>💬</span> {t('Join Discord')}
+            {t('Join Discord')}
           </button>
           <button
             className="btn"
@@ -251,20 +290,52 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
               background: '#0070ba', color: '#fff', fontWeight: 600,
               display: 'inline-flex', alignItems: 'center', gap: 8, marginLeft: 8,
             }}>
-            <span style={{ fontSize: 16 }}>💖</span> {t('Donate')}
+            {t('Donate')}
           </button>
           <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 10 }}>
             {t("Donations are not required but are very much appreciated!")}
           </div>
         </div>
       </S>
+        </div>
+      </div>
       </div>
     </div>
   );
 }
 
-function S({ title, children }) {
-  return <div style={{ marginBottom: 20, padding: 20, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-    <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--mono)' }}>{title}</h3>{children}
+/* Toggle switch. The old square checkbox with a tick glyph read as a form
+   control; these rows are settings, so they get a switch. */
+function Toggle({ on, onChange, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onChange}
+      style={{ width: 46, height: 26, flexShrink: 0, borderRadius: 'var(--radius-pill)', position: 'relative',
+        background: on ? 'var(--accent-soft)' : 'var(--bg-elevated)',
+        border: `1px solid ${on ? 'var(--accent-border)' : 'var(--border-2)'}`, transition: 'background .15s, border-color .15s' }}>
+      <span style={{ position: 'absolute', top: 3, left: on ? 24 : 4, width: 18, height: 18, borderRadius: '50%',
+        background: on ? 'var(--accent)' : 'var(--text-3)', transition: 'left .15s ease, background .15s' }} />
+    </button>
+  );
+}
+
+/* Title + explanation on the left, control on the right. */
+function Opt({ title, hint, children, last }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+      padding: '11px 0', borderBottom: last ? 'none' : '1px solid var(--border)' }}>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: 'var(--text)' }}>{title}</span>
+        {hint && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-3)', marginTop: 2, lineHeight: 1.5 }}>{hint}</span>}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function S({ title, children, danger }) {
+  // breakInside keeps a panel whole when the container splits into columns.
+  return <div className="panel" style={{ marginBottom: 18, breakInside: 'avoid', WebkitColumnBreakInside: 'avoid',
+    ...(danger ? { borderColor: 'var(--red-border)' } : null) }}>
+    <h3 className="label" style={{ fontSize: 11, marginBottom: 14, color: danger ? 'var(--red-bright)' : undefined }}>{title}</h3>{children}
   </div>;
 }

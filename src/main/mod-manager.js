@@ -1,6 +1,5 @@
 const path = require('path');
 const fs = require('fs-extra');
-const extractZip = require('extract-zip');
 const Seven = require('node-7z');
 const sevenBin = require('7zip-bin');
 const Store = require('electron-store');
@@ -975,7 +974,7 @@ class ModManager {
   /** Remove leftover temp extraction folders from previous crashes.
    *  Temp dirs are created in getStagingPath() with these prefixes:
    *    _temp_extract_ (install flow)
-   *    _zip_temp_     (extract-zip fallback)
+   *    _zip_temp_     (7-Zip zip fallback)
    *    _7z_temp_      (node-7z fallback)
    *  Legacy locations (old versions put them in gamePath or BepInEx/) are
    *  still swept to clean up after upgrade. */
@@ -3243,7 +3242,7 @@ class ModManager {
         return;
       } catch (err) {
         // node-stream-zip rejects Windows-style zips (backslash paths) as "Malicious entry".
-        // Fall back to extract-zip (yauzl), which handles them fine.
+        // Fall back to the bundled 7-Zip, which handles them fine.
         if (!/Malicious entry/.test(err.message || '')) throw err;
         await this._extractZipFallback(src, dest, onProgress);
         return;
@@ -3360,21 +3359,24 @@ class ModManager {
   }
 
   /**
-   * Fallback zip extraction using yauzl (via extract-zip).
-   * Handles Windows-style zips with backslash path separators that
-   * node-stream-zip rejects. Extracts to a temp dir and merges into dest
-   * so BepInEx casing gets normalized via _mergeDir.
+   * Fallback zip extraction, for Windows-style zips with backslash path
+   * separators that node-stream-zip rejects as "Malicious entry".
+   *
+   * This used to use extract-zip (yauzl). It now uses the bundled 7-Zip, which
+   * is already here for .7z and .rar and handles these archives identically.
+   * extract-zip has two unfixed path-traversal advisories (symlink entries can
+   * write outside the destination) with no patched release, and mod archives
+   * are exactly the untrusted input those advisories describe. 7za does not
+   * recreate symlinks from zip entries, so the class of attack does not apply.
+   *
+   * Extracts to a temp dir and merges into dest so BepInEx casing still gets
+   * normalised via _mergeDir.
    */
   async _extractZipFallback(src, dest, onProgress) {
-    const extract = require('extract-zip');
     const tempDir = path.join(this.getStagingPath(), '_zip_temp_' + Date.now());
     fs.ensureDirSync(tempDir);
     try {
-      let done = 0;
-      await extract(src, {
-        dir: tempDir,
-        onEntry: () => { done++; if (onProgress) onProgress(-1, done, -1); },
-      });
+      await this._sevenExtract(src, tempDir, null, onProgress, 'Extraction failed');
       // Windows-packed archives can leave literal-backslash filenames on Linux
       // (Steam Deck) — rebuild real folders before merging.
       this._explodeBackslashEntries(tempDir);

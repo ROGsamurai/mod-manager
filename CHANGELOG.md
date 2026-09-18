@@ -1,3 +1,16 @@
+Version 2.0.0
+NEW
+- A completely refreshed interface. The manager now uses a deeper, cooler background with a single card per mod instead of boxed table rows, softer corners, and far more breathing room. Status is shown as tinted pills — update available, blocked, verified — rather than solid colour blocks, and every emoji icon has been replaced with a crisp drawn icon that follows the theme
+- The sidebar carries the app name and a status light, shows the active section with an accent bar, and keeps language, theme and version in a quiet footer
+- Install progress now sits inside the mod's own card with its own phase label, so "Removing old version" and "Installing" are distinguishable at a glance
+- The title bar is slimmer, with mod counts as pills and a green Play button
+- All ten themes were rebuilt on the new palette structure. A theme is now declared in a handful of lines and expanded automatically, so adding new colour schemes no longer means hand-writing twenty variables
+
+SECURITY / MAINTENANCE
+- Updated Electron from 29 to 42. Electron 29 stopped receiving security patches some time ago; this pulls in a long list of Chromium and Electron fixes, and it is the only one of these packages that actually ships inside the .exe
+- Removed the extract-zip dependency. It was only used as a fallback for Windows-style .zip files and has two unfixed path-traversal advisories with no patched release available. Those archives are now unpacked with the 7-Zip binary the manager already carries, which behaves identically and is not affected
+- Updated Vite to 7 and the React plugin to 5, clearing the development-server advisories and the deprecated-API warning during builds
+
 Version 1.1.8
 NEW
 - Downloading the same mod twice no longer leaves both .zip files in the staging folder. Copies such as "Mod (1).zip" and "Mod (2).zip" are reduced to a single file, keeping the un-suffixed original (or whichever copy is currently installed). Optional-file variants of the same version, and the same mod in a different archive format, are not treated as copies

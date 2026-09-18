@@ -54,17 +54,17 @@ export default function ProfileManager({ notify, onRefresh }) {
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: 24, maxWidth: 600 }}>
-      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>📋 {t('Mod Profiles')}</h2>
+      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>{t('Mod Profiles')}</h2>
       <p style={{ fontSize: 14, color: 'var(--text-3)', marginBottom: 20, lineHeight: 1.6 }}>
         {t('Save which mods are on/off. Switch between setups instantly.')}
       </p>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, padding: 16, background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, padding: 16, background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
         <input className="input" placeholder={t('New profile name...')} value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} style={{ flex: 1 }} />
         <button className="btn btn-accent" onClick={create}>{t('+ Save Current')}</button>
-        <button className="btn btn-ghost" onClick={doImport}>📥 {t('Import')}</button>
+        <button className="btn btn-ghost" onClick={doImport}>{t('Import')}</button>
       </div>
       {profiles.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-3)', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+        <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-3)', background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
           <div style={{ fontSize: 40, marginBottom: 10, opacity: .3 }}>📋</div>
           <div style={{ fontSize: 16, fontWeight: 600 }}>{t('No profiles yet')}</div>
           <div style={{ fontSize: 14, marginTop: 4, color: 'var(--text-4)' }}>{t('Create one to snapshot your current setup.')}</div>
@@ -76,7 +76,7 @@ export default function ProfileManager({ notify, onRefresh }) {
             return (
               <div key={p.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: 16,
-                background: isActive ? 'rgba(92,185,80,.08)' : 'var(--bg-elevated)',
+                background: isActive ? 'var(--green-soft)' : 'var(--bg-surface)',
                 borderRadius: 'var(--radius)',
                 border: isActive ? '1px solid var(--green)' : '1px solid var(--border)',
               }}>
@@ -96,7 +96,7 @@ export default function ProfileManager({ notify, onRefresh }) {
                 </div>
                 {isActive ? (
                   <button className="btn btn-ghost btn-sm" disabled style={{ opacity: .6, cursor: 'default' }}>
-                    ✓ {t('Activated')}
+                    {t('Activated')}
                   </button>
                 ) : (
                   <button className="btn btn-accent btn-sm" onClick={() => activate(p.id)} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 96, justifyContent: 'center' }}>
@@ -105,11 +105,11 @@ export default function ProfileManager({ notify, onRefresh }) {
                         <span style={{ display: 'inline-block', width: 11, height: 11, border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
                         {activateProgress.total > 0 ? `${activateProgress.current}/${activateProgress.total}` : '…'}
                       </>
-                    ) : busy ? '…' : `▶ ${t('Activate')}`}
+                    ) : busy ? '…' : `${t('Activate')}`}
                   </button>
                 )}
                 <button className="btn btn-ghost btn-sm" onClick={() => doExport(p.id)} title={t('Export')} disabled={busy}>📤</button>
-                <button className="btn btn-danger btn-sm" onClick={() => remove(p.id, p.name)} disabled={busy}>🗑</button>
+                <button className="btn btn-danger btn-sm" onClick={() => remove(p.id, p.name)} disabled={busy}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /></svg></button>
               </div>
             );
           })}

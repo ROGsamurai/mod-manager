@@ -10,6 +10,7 @@ if (!gotLock) { process.exit(0); }
 const chokidar = require('chokidar');
 const Store = require('electron-store');
 const store = new Store({ name: 'mod-manager' });
+const updateChecker = require('./update-checker');
 const modManager = require('./mod-manager');
 const gameDetector = require('./game-detector');
 
@@ -336,6 +337,23 @@ ipcMain.handle('mods:install', async (_, filename, targetKey, modName, skipRemov
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:list', () => modManager.getInstalledMods());
+
+// ── Mod update checking ─────────────────────────────────────────────────────
+// The app never calls the Nexus API; it reads a static version list published
+// by a scheduled job. See src/main/update-checker.js.
+ipcMain.handle('updates:check', async (_e, force) => {
+  try { return await updateChecker.check(modManager.getInstalledMods(), !!force); }
+  catch (e) { console.error('[updates:check]', e); return { enabled: false, updates: {}, error: e.message }; }
+});
+ipcMain.handle('updates:get-settings', () => ({
+  enabled: updateChecker.isEnabled(),
+  manifestUrl: updateChecker.getManifestUrl(),
+}));
+ipcMain.handle('updates:set-settings', (_e, { enabled, manifestUrl } = {}) => {
+  if (enabled !== undefined) updateChecker.setEnabled(enabled);
+  if (manifestUrl !== undefined) updateChecker.setManifestUrl(manifestUrl);
+  return { enabled: updateChecker.isEnabled(), manifestUrl: updateChecker.getManifestUrl() };
+});
 ipcMain.handle('mods:uninstall', async (event, id) => {
   try {
     await modManager.uninstallMod(id, (done, total) => {

@@ -8,7 +8,6 @@ import InstalledMods from './components/InstalledMods';
 import ProfileManager from './components/ProfileManager';
 import ConfigEditor from './components/ConfigEditor';
 import Settings from './components/Settings';
-import logoImg from './assets/logo.png';
 
 export default function App({ detectedLocale }) {
   return (
@@ -24,6 +23,7 @@ function AppInner() {
   const [mods, setMods] = useState([]);
   const [staged, setStaged] = useState([]);
   const [conflicts, setConflicts] = useState([]);
+  const [updates, setUpdates] = useState({});
   const [gamePath, setGamePath] = useState(null);
   const [bepinex, setBepinex] = useState({ installed: false });
   const [toast, setToast] = useState(null);
@@ -45,7 +45,13 @@ function AppInner() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null; }, ms);
   }, []);
-  const refreshMods = async () => { setMods(await window.api.getInstalledMods()); setConflicts(await window.api.getConflicts()); };
+  const refreshMods = async () => {
+    setMods(await window.api.getInstalledMods());
+    setConflicts(await window.api.getConflicts());
+    // Update badges: reads a cached version list, so this is cheap and silent.
+    // Returns nothing useful until the feature is switched on in Settings.
+    try { const r = await window.api.checkUpdates(false); setUpdates(r?.updates || {}); } catch { setUpdates({}); }
+  };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
 
   useEffect(() => {
@@ -133,7 +139,7 @@ function AppInner() {
       notify(`${t('Install')}: "${r.mod.name}" → ${r.mod.targetLabel}${removedNote}`, 'success');
       await refreshMods(); await refreshStaged(); setBepinex(await window.api.getBepInExStatus());
     }
-    else if (r.blocked) { notify(`🛑 ${r.error}`, 'error'); }
+    else if (r.blocked) { notify(`${r.error}`, 'error'); }
     else notify(r.error, 'error');
   };
   const handleToggle = async id => {
@@ -213,9 +219,9 @@ function AppInner() {
         // Name the mod that was overwritten. A bare count read like a claim
         // about how many files were sitting in the staging folder.
         const names = [...new Set(replaced.map(x => x.name || x.filename))];
-        parts.push(`${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''} — ${t('replaced in Downloaded Mods')}`);
+        parts.push(`${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''} — ${t('replaced in Staged Mods')}`);
       }
-      if (pruned?.length) parts.push(`${pruned.length} ${t('old version(s) removed from Downloaded Mods')}`);
+      if (pruned?.length) parts.push(`${pruned.length} ${t('old version(s) removed from Staged Mods')}`);
       const nothingHappened = parts.length === 0;
       if (nothingHappened) parts.push(t('Mod version already added'));
       // Anything the user did not expect stays up longer than a success flash.
@@ -243,7 +249,7 @@ function AppInner() {
       {pendingRemove && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.65)' }}>
           <div style={{ background: 'var(--bg-elevated)', border: '2px solid var(--red)', borderRadius: 'var(--radius-lg)', padding: 28, maxWidth: 460, width: '90%', textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>⚠️</div>
+            <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--red-bright)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg></div>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>{t('Are you sure?')}</div>
             <div style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.7, marginBottom: 20 }}>
               {t('Anything still left in your store from this mod will corrupt your save data if you didn\'t remove the items first from within your game!')}
@@ -255,44 +261,47 @@ function AppInner() {
             </label>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button className="btn btn-ghost" onClick={() => setPendingRemove(null)} style={{ padding: '8px 24px' }}>{t('Cancel')}</button>
-              <button className="btn btn-danger" onClick={() => doRemove(pendingRemove.id)} style={{ padding: '8px 24px' }}>🗑 {t('Remove Anyway')}</button>
+              <button className="btn btn-danger" onClick={() => doRemove(pendingRemove.id)} style={{ padding: '8px 24px' }}>{t('Remove Anyway')}</button>
             </div>
           </div>
         </div>
       )}
 
+      <div style={{display:'flex',flex:1,minHeight:0}}>
+        <Sidebar view={view} onNav={setView} modCount={mods.length} stagedCount={staged.length} themeId={themeId} onChangeTheme={changeTheme} bepinexReady={bepinex.installed && bepinex.gameFound !== false} />
+        <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
+      {/* Title bar. The heavy accent underline is gone — the header now reads as
+          part of the app chrome, with state shown as pills rather than solid
+          colour blocks. */}
       <header className="drag-region" style={{
         display:'flex',justifyContent:'space-between',alignItems:'center',
-        background:'var(--bg-elevated)',padding:'0 0 0 18px',
-        borderBottom:'2px solid var(--accent)',height:56,flexShrink:0,
+        background:'var(--bg-base)',padding:'0 0 0 16px',
+        borderBottom:'1px solid var(--border)',height:52,flexShrink:0,
       }}>
-        <div className="no-drag" style={{display:'flex',alignItems:'center',gap:10}}>
-          <img src={logoImg} alt="Logo" style={{width:44,height:44,objectFit:'contain',flexShrink:0}} />
-          <div>
-            <div style={{fontSize:20,fontWeight:700,color:'var(--text)',letterSpacing:.5}}>TCG Card Shop Simulator</div>
-            <div style={{fontSize:11,color:'var(--accent)',textTransform:'uppercase',letterSpacing:3,fontFamily:'var(--mono)'}}>Mod Manager</div>
-          </div>
+        <div className="no-drag" style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
+          <span className="mono truncate" style={{fontSize:12,color:'var(--text-3)',letterSpacing:.3}}>TCG Card Shop Simulator</span>
         </div>
-        <div className="no-drag" style={{display:'flex',alignItems:'center',gap:12}}>
-          <span className="badge" style={{background:'var(--bg-active)',color:'var(--text-2)'}}>{mods.length} {t('mods')}</span>
-          <span className="badge" style={{background:'var(--green)',color:'#fff'}}>{enabledCount} {t('active')}</span>
-          {staged.length>0&&<span className="badge" style={{background:'var(--accent)',color:'var(--bg-deep)'}}>{staged.length} {t('staged')}</span>}
-          {conflicts.length>0&&<span className="badge" style={{background:'var(--red)',color:'#fcc'}}>{conflicts.length} {t('conflicts')}</span>}
-          <button className="btn btn-accent" onClick={handleLaunch}>▶ {t('Play')}</button>
+        <div className="no-drag" style={{display:'flex',alignItems:'center',gap:8}}>
+          <span className="pill">{mods.length} {t('mods')}</span>
+          <span className="pill pill-success">{enabledCount} {t('active')}</span>
+          {staged.length>0&&<span className="pill pill-accent">{staged.length} {t('staged')}</span>}
+          {conflicts.length>0&&<span className="pill pill-danger">{conflicts.length} {t('conflicts')}</span>}
+          <button className="btn btn-success btn-sm" style={{marginLeft:4,paddingLeft:14,paddingRight:16}} onClick={handleLaunch}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
+            {t('Play')}
+          </button>
         </div>
-        <div className="no-drag" style={{display:'flex',height:'100%'}}>
-          <WinBtn onClick={()=>window.api.minimize()}>─</WinBtn>
-          <WinBtn onClick={()=>window.api.maximize()}>☐</WinBtn>
-          <WinBtn onClick={()=>window.api.close()} close>✕</WinBtn>
+        <div className="no-drag" style={{display:'flex',height:'100%',marginLeft:8}}>
+          <WinBtn onClick={()=>window.api.minimize()} label="Minimize"><path d="M5 12h14"/></WinBtn>
+          <WinBtn onClick={()=>window.api.maximize()} label="Maximize"><rect x="5" y="5" width="14" height="14" rx="1"/></WinBtn>
+          <WinBtn onClick={()=>window.api.close()} close label="Close"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></WinBtn>
         </div>
       </header>
 
-      <div style={{display:'flex',flex:1,minHeight:0}}>
-        <Sidebar view={view} onNav={setView} modCount={mods.length} stagedCount={staged.length} themeId={themeId} onChangeTheme={changeTheme} />
-        <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-surface)'}}>
-          {view==='suggested'&&<SuggestedMods/>}
+        <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-deep)'}}>
+          {view==='suggested'&&<SuggestedMods mods={mods}/>}
           {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
+          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
           {view==='profiles'&&<ProfileManager notify={notify} onRefresh={refreshMods}/>}
           {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
@@ -301,15 +310,19 @@ function AppInner() {
             onSetPath={async()=>{const p=await window.api.openFolderDialog();if(p){const r=await window.api.setGamePath(p);const finalPath=(r&&r.path)||p;setGamePath(finalPath);setBepinex(await window.api.getBepInExStatus());notify(r&&r.adjusted?t('Game path set to the Content folder (where mods must go)'):t('Game path set'),'success');}}}
             onDetect={async()=>{const p=await window.api.detectGame();if(p){setGamePath(p);setBepinex(await window.api.getBepInExStatus());notify('Game found!','success');}else notify('Could not auto-detect.','error');}}/>}
         </main>
+        </div>
       </div>
     </div>
   );
 }
 
-function WinBtn({children,onClick,close}){
+function WinBtn({children,onClick,close,label}){
   const [h,setH]=useState(false);
-  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-    style={{width:48,height:'100%',display:'flex',alignItems:'center',justifyContent:'center',
-      background:h?(close?'#e81123':'var(--bg-hover)'):'transparent',
-      color:h&&close?'#fff':'var(--text-4)',fontSize:15,transition:'all .1s'}}>{children}</button>;
+  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} aria-label={label}
+    style={{width:46,height:'100%',display:'flex',alignItems:'center',justifyContent:'center',
+      background:h?(close?'#e81123':'var(--bg-elevated)'):'transparent',
+      color:h&&close?'#fff':'var(--text-3)',transition:'background .12s, color .12s'}}>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
+  </button>;
 }

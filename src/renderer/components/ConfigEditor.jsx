@@ -33,8 +33,8 @@ export default function ConfigEditor({ notify }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-      <div style={{ padding: '14px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>⚙️ {t('Config Editor')}</div>
+      <div style={{ padding: '24px 24px 18px', flexShrink: 0 }}>
+        <h1 className="page-title">{t('Config Editor')}</h1>
         <div style={{ fontSize: 14, color: 'var(--text-3)', marginTop: 2 }}>{t('Edit BepInEx mod configuration files directly.')}</div>
       </div>
 
@@ -82,7 +82,7 @@ export default function ConfigEditor({ notify }) {
               </div>
               {filteredSections.map(section => (
                 <div key={section.name} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ padding: '10px 20px', background: 'var(--bg-elevated)', fontSize: 14, fontWeight: 700, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>
+                  <div className="mono" style={{ padding: '10px 20px', background: 'var(--bg-base)', fontSize: 13, fontWeight: 700, color: 'var(--text-2)' }}>
                     [{section.name}]
                   </div>
                   {section.entries.filter(e =>
@@ -153,7 +153,7 @@ function ConfigEntry({ entry, section, saving, onSave }) {
               style={{ width: 160, fontSize: 13, padding: '4px 8px', borderColor: changed ? 'var(--accent)' : undefined }} />
             {changed && (
               <button className="btn btn-accent btn-sm" onClick={handleSave} disabled={saving} style={{ padding: '3px 10px', fontSize: 12 }}>
-                {saving ? '⏳' : '✓'}
+                {saving ? <span className="spinner" style={{ width: 13, height: 13 }} /> : t('Save')}
               </button>
             )}
           </>

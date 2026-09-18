@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
-export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
+export default function InstalledMods({ mods, conflicts, updates = {}, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
   const { t, tMod } = useI18n();
   const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState('All');
@@ -164,7 +164,7 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
   };
 
   const rowProps = (m, i) => ({
-    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id],
+    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id], update: updates[m.id],
     onToggle: () => onToggle(m.id), onRemove: () => onRemove(m.id), onMarkCore: c => onMarkCore(m.id, c),
     selected: selected.has(m.id), onSelect: () => toggleSelect(m.id), t, tMod,
     busy: togglingId === m.id,
@@ -180,22 +180,26 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '24px 24px 0' }}>
+        <h1 className="page-title">{t('INSTALLED MODS')}</h1>
+        <p className="page-sub">{mods.length} {t('mods')} · {mods.filter(m => m.enabled).length} {t('active')}</p>
+      </div>
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, padding: '14px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)', alignItems: 'flex-end', flexWrap: 'wrap', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: 12, padding: '18px 24px', alignItems: 'flex-end', flexWrap: 'wrap', flexShrink: 0 }}>
         <FL label={t('STATUS')}><select className="select" value={statusF} onChange={e => setStatusF(e.target.value)}><option value="All">{t('All')}</option><option value="Enabled">{t('Enabled')}</option><option value="Disabled">{t('Disabled')}</option></select></FL>
         <FL label={t('SEARCH')} style={{ flex: 2, minWidth: 140 }}><input className="input" placeholder={t('Filter by name...')} value={search} onChange={e => setSearch(e.target.value)} /></FL>
         <FL label={t('EXTRACT TARGET')}><select className="select" value={targetF} onChange={e => setTargetF(e.target.value)}>{uniqueTargets.map(u => <option key={u} value={u}>{u === 'All' ? t('All') : u}</option>)}</select></FL>
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => applyLockAll(true)} title={t('Mark every visible mod as Core (locked from toggle/remove)')} style={{ whiteSpace: 'nowrap' }}>🔒 {t('Lock All')}</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => applyLockAll(false)} title={t('Unmark every visible mod as Core (allow toggling/removing)')} style={{ whiteSpace: 'nowrap' }}>🔓 {t('Unlock All')}</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => applyLockAll(true)} title={t('Mark every visible mod as Core (locked from toggle/remove)')} style={{ whiteSpace: 'nowrap' }}>{t('Lock All')}</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => applyLockAll(false)} title={t('Unmark every visible mod as Core (allow toggling/removing)')} style={{ whiteSpace: 'nowrap' }}>{t('Unlock All')}</button>
           {!showCreate ? (
-            <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(true)} style={{ whiteSpace: 'nowrap' }}>📁 {t('Create Group')}</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(true)} style={{ whiteSpace: 'nowrap' }}>{t('Create Group')}</button>
           ) : (
             <div style={{ display: 'flex', gap: 4 }}>
               <input className="input" placeholder={t('Group name...')} value={newGroupName} onChange={e => setNewGroupName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') createGroup(); if (e.key === 'Escape') setShowCreate(false); }}
                 autoFocus style={{ width: 140, padding: '4px 8px', fontSize: 13 }} />
-              <button className="btn btn-accent btn-sm" onClick={createGroup}>✓</button>
+              <button className="btn btn-accent btn-sm" onClick={createGroup} aria-label={t("Save")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg></button>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(false)}>✕</button>
             </div>
           )}
@@ -213,14 +217,16 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
             defaultValue="" style={{ fontSize: 13, padding: '4px 8px' }}>
             <option value="" disabled>{t('Move to group...')}</option>
             <option value="__none">— {t('Ungrouped')}</option>
-            {groups.map(g => <option key={g.id} value={g.id}>📁 {g.name}</option>)}
+            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
           <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())} style={{ marginLeft: 'auto' }}>✕ {t('Clear')}</button>
         </div>
       )}
 
       {/* Column headers */}
-      <div style={{ display: 'flex', padding: '10px 16px', background: 'var(--bg-surface)', borderBottom: '2px solid var(--border-2)', fontSize: 13, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--mono)', flexShrink: 0, alignItems: 'center' }}>
+      <div style={{ display: 'flex', margin: '0 24px', padding: '8px 16px', border: '1px solid transparent',
+        borderBottom: '1px solid var(--border)', fontSize: 10, fontWeight: 700, color: 'var(--text-4)',
+        textTransform: 'uppercase', letterSpacing: 1.5, flexShrink: 0, alignItems: 'center' }}>
         {groups.length > 0 && (
           <div style={{ width: 30, display: 'flex', justifyContent: 'center' }}>
             <input type="checkbox" checked={sorted.length > 0 && selected.size === sorted.length} onChange={selectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
@@ -228,10 +234,10 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
         )}
         <div style={{ width: 95 }}>{t('STATUS')}</div>
         <div style={{ flex: 2, cursor: 'pointer' }} onClick={() => doSort('name')}>{t('NAME')}{arrow('name')}</div>
-        <div style={{ width: 90, cursor: 'pointer' }} onClick={() => doSort('version')}>{t('VERSION')}{arrow('version')}</div>
+        <div style={{ width: 132, cursor: 'pointer' }} onClick={() => doSort('version')}>{t('VERSION')}{arrow('version')}</div>
         <div style={{ width: 155 }}>{t('TARGET')}</div>
         <div style={{ width: 60, textAlign: 'center' }}>{t('FILES')}</div>
-        <div style={{ width: 60, textAlign: 'center', cursor: 'help' }} title={t('Warnings: missing dependencies (⚠️) or file conflicts with another mod (⚡). Hover the icon for details.')}>{t('ISSUES')}</div>
+        <div style={{ width: 60, textAlign: 'center', cursor: 'help' }} title={t('Warnings: missing dependencies or file conflicts with another mod. Hover the icon for details.')}>{t('ISSUES')}</div>
         <div style={{ width: 100, textAlign: 'center' }}>{t('ACTIONS')}</div>
       </div>
 
@@ -264,8 +270,7 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
 
         {groups.length > 0 && ungroupedMods.length > 0 && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px',
-            background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', gap: 10, padding: '14px 24px 8px',
             cursor: 'pointer', userSelect: 'none',
           }} onClick={() => toggleCollapse('__ungrouped')}>
             <span style={{ fontSize: 14, color: 'var(--text-3)', transition: 'transform .15s', transform: collapsed.has('__ungrouped') ? 'rotate(-90deg)' : 'rotate(0deg)' }}>&#9660;</span>
@@ -277,10 +282,12 @@ export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onM
         {(groups.length === 0 ? sorted : (collapsed.has('__ungrouped') ? [] : ungroupedMods)).map((m, i) => <Row {...rowProps(m, i)} hasCheckbox={groups.length > 0} />)}
 
         {sorted.length === 0 && <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 50, color: 'var(--text-3)' }}>
-          <div style={{ fontSize: 44, marginBottom: 10, opacity: .3 }}>🔧</div>
-          <div style={{ fontSize: 17 }}>{mods.length === 0 ? t('No mods installed') : t('No mods match filters')}</div>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginBottom: 12 }}>
+            <path d="M20 7h-9" /><path d="M14 17H5" /><circle cx="17" cy="17" r="3" /><circle cx="7" cy="7" r="3" />
+          </svg>
+          <div style={{ fontSize: 16, color: 'var(--text-2)' }}>{mods.length === 0 ? t('No mods installed') : t('No mods match filters')}</div>
           {mods.length === 0 && <div style={{ fontSize: 14, color: 'var(--text-4)', marginTop: 8, textAlign: 'center', lineHeight: 1.8 }}>
-            {t('Start by installing BepInEx from the Recommended Mods tab, then add mod archives to the Downloaded Mods tab.')}
+            {t('Start by installing BepInEx from the Getting Started tab, then add mod archives to the Staged Mods tab.')}
           </div>}
         </div>}
       </div>
@@ -293,29 +300,29 @@ function GroupHeader({ name, count, isCollapsed, onToggle, isEditing, editName, 
     <div draggable={!isEditing} onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(); }}
       onDragEnd={onDragEnd} onDragOver={e => { e.preventDefault(); onDragOver(); }} onDrop={e => { e.preventDefault(); onDrop(); }}
       style={{
-        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px',
-        background: isDragOver ? 'var(--accent-glow)' : 'var(--bg-elevated)',
-        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 10, padding: '16px 24px 8px',
+        background: isDragOver ? 'var(--accent-soft)' : 'transparent',
         borderTop: isDragOver ? '2px solid var(--accent)' : '2px solid transparent',
         cursor: isEditing ? 'default' : 'default', userSelect: 'none',
         opacity: isDragging ? 0.4 : 1, transition: 'opacity .15s, border-top .1s',
       }} onClick={onToggle}>
       {hasCheckbox && <div style={{ width: 30 }} />}
       <span style={{ fontSize: 14, color: 'var(--text-3)', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>&#9660;</span>
-      <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>📁</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z" /></svg>
       {isEditing ? (
         <div style={{ display: 'flex', gap: 4, flex: 1 }} onClick={e => e.stopPropagation()}>
           <input className="input" value={editName} onChange={e => onEditChange(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') onEditSave(); if (e.key === 'Escape') onEditCancel(); }}
             autoFocus style={{ flex: 1, padding: '2px 8px', fontSize: 14 }} />
-          <button className="btn btn-accent btn-sm" onClick={onEditSave} style={{ padding: '2px 8px' }}>✓</button>
+          <button className="btn btn-accent btn-sm" onClick={onEditSave} aria-label={t('Save')} style={{ padding: '2px 8px' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg></button>
         </div>
       ) : (
-        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', flex: 1 }}>{name}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{name}</span>
       )}
-      <span style={{ fontSize: 13, color: 'var(--text-4)', fontFamily: 'var(--mono)' }}>{count} {t('mods')}</span>
+      <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-4)' }}>{count} {t('mods')}</span>
+      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
       <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); onEditStart(); }} title={t('Rename')} style={{ padding: '2px 6px', fontSize: 12 }}>✏️</button>
-      <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); onDelete(); }} title={t('Remove')} style={{ padding: '2px 6px', fontSize: 12, color: 'var(--red-bright)' }}>🗑</button>
+      <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); onDelete(); }} title={t('Remove')} style={{ padding: '2px 6px', fontSize: 12, color: 'var(--red-bright)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /></svg></button>
     </div>
   );
 }
@@ -326,7 +333,7 @@ function FL({ label, children, style }) {
   </div>;
 }
 
-function Row({ mod, i, conflict, conflictInfo, missingDeps, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
+function Row({ mod, i, conflict, conflictInfo, missingDeps, update, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
   const [h, setH] = useState(false);
   const isCore = mod.core;
   const isPrefab = isCore && mod.files?.some(f => f.toLowerCase().includes('_prefabloader'));
@@ -343,9 +350,11 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, onToggle, onRemove, 
     : '';
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      style={{ display: 'flex', padding: '8px 16px', alignItems: 'center', borderBottom: '1px solid var(--border)', transition: 'background .1s', fontSize: 15, position: 'relative',
+      className={`card${selected ? ' card-accent' : ''}${hasDeps ? ' card-accent' : ''}`}
+      style={{ display: 'flex', padding: '10px 16px', alignItems: 'center', fontSize: 15, position: 'relative', overflow: 'hidden',
+        margin: '0 24px 8px', opacity: mod.enabled === false ? .62 : 1,
         animation: `fadeIn .15s ease ${i * .015}s both`,
-        background: selected ? 'var(--accent-glow)' : h ? 'var(--bg-hover)' : i % 2 === 0 ? 'var(--bg-base)' : 'var(--bg-surface)' }}>
+        background: selected ? 'var(--accent-soft)' : h ? 'var(--bg-base)' : 'var(--bg-surface)' }}>
       {hasCheckbox && (
         <div style={{ width: 30, display: 'flex', justifyContent: 'center' }}>
           <input type="checkbox" checked={selected} onChange={onSelect} style={{ cursor: 'pointer', width: 15, height: 15 }} />
@@ -353,15 +362,21 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, onToggle, onRemove, 
       )}
       <div style={{ width: 95 }}>
         {isCore ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, background: 'var(--accent-glow)', color: 'var(--accent)' }}>🔒 {isPrefab ? t('Prefab') : t('Core')}</span>
+          <span className="pill pill-accent" style={{ height: 28, padding: '0 11px' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+            {isPrefab ? t('Prefab') : t('Core')}
+          </span>
         ) : busy ? (
-          <div title={t('Working…')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'default', background: 'var(--bg-active)' }}>
-            <span style={{ display: 'inline-block', width: 11, height: 11, border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+          <div title={t('Working…')} className="pill" style={{ height: 28, padding: '0 11px', cursor: 'default' }}>
+            <span className="spinner" style={{ width: 11, height: 11 }} />
             {progress && progress.total > 0 ? `${Math.min(100, Math.round(progress.done / progress.total * 100))}%` : '…'}
           </div>
         ) : (
-          <div onClick={anyToggling ? undefined : onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600, color: '#fff', cursor: anyToggling ? 'default' : 'pointer', opacity: anyToggling ? .5 : 1, background: mod.enabled ? 'var(--green)' : 'var(--bg-active)' }}>
-            {mod.enabled ? `✓ ${t('On')}` : `✕ ${t('Off')}`}<span style={{ fontSize: 11, opacity: .6 }}>▾</span></div>
+          <button type="button" onClick={anyToggling ? undefined : onToggle} disabled={anyToggling}
+            className={`pill ${mod.enabled ? 'pill-success' : ''}`} style={{ height: 28, padding: '0 12px', cursor: anyToggling ? 'default' : 'pointer' }}>
+            {mod.enabled && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>}
+            {mod.enabled ? t('On') : t('Off')}
+          </button>
         )}
       </div>
       <div style={{ flex: 2, fontWeight: 500, color: 'var(--text)', minWidth: 0 }}>
@@ -372,40 +387,67 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, onToggle, onRemove, 
               onKeyDown={e => { if (e.key === 'Enter') onNameEditSave(); if (e.key === 'Escape') onNameEditCancel(); }}
               onBlur={onNameEditSave}
               style={{ flex: 1, padding: '2px 8px', fontSize: 14, minWidth: 0 }} />
-            <button className="btn btn-accent btn-sm" onMouseDown={e => e.preventDefault()} onClick={onNameEditSave} style={{ padding: '2px 8px' }}>✓</button>
+            <button className="btn btn-accent btn-sm" onMouseDown={e => e.preventDefault()} onClick={onNameEditSave} aria-label={t('Save')} style={{ padding: '2px 8px' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg></button>
             <button className="btn btn-ghost btn-sm" onMouseDown={e => e.preventDefault()} onClick={onNameEditCancel} style={{ padding: '2px 8px' }}>✕</button>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{translatedName}</span>
             {!anyToggling && h && (
-              <button className="btn btn-ghost btn-sm" onClick={onNameEditStart} title={t('Rename')}
-                style={{ padding: '1px 5px', fontSize: 11, flexShrink: 0, opacity: .8 }}>✏️</button>
+              <button className="btn btn-quiet btn-sm btn-icon" onClick={onNameEditStart} title={t('Rename')} aria-label={t('Rename')}
+                style={{ width: 24, height: 24, flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
+              </button>
             )}
           </div>
         )}
         {hasDeps && (
-          <div style={{ fontSize: 11, color: 'var(--red-bright)', marginTop: 2 }}>
-            ⚠️ {t('Missing')}: {missingDeps.join(', ')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--accent)', marginTop: 3 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
+            {t('Missing')}: {missingDeps.join(', ')}
           </div>
         )}
         {hasConflict && (
           <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={conflictText}>
-            ⚡ {conflictText}
+            {conflictText}
           </div>
         )}
       </div>
-      <div style={{ width: 90, color: 'var(--text-3)', fontFamily: 'var(--mono)', fontSize: 13 }}>{mod.version || '—'}</div>
-      <div style={{ width: 155 }}><span style={{ fontSize: 13, padding: '3px 8px', borderRadius: 'var(--radius)', background: isRoot ? 'rgba(218,155,60,.15)' : 'rgba(92,185,80,.12)', color: isRoot ? 'var(--accent)' : 'var(--green-bright)' }}>{mod.targetLabel}</span></div>
-      <div style={{ width: 60, textAlign: 'center', color: 'var(--text-3)', fontSize: 14 }}>{mod.fileCount || '—'}</div>
+      <div style={{ width: 132, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+        {mod.version
+          ? <span className="badge badge-accent">{mod.version}</span>
+          : <span className="mono" style={{ color: 'var(--text-4)', fontSize: 12.5 }}>—</span>}
+        {/* Update badge comes from the published version list, not from Nexus
+            directly — see src/main/update-checker.js. */}
+        {update && (
+          <button type="button" className="pill pill-info pill-pulse"
+            title={`${update.installed} → ${update.latest} · ${t('Open on Nexus Mods')}`}
+            onClick={e => { e.stopPropagation(); window.api.openUrl(`https://www.nexusmods.com/tcgcardshopsimulator/mods/${update.modId}`); }}
+            style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {t('Update Available')}
+          </button>
+        )}
+      </div>
+      <div style={{ width: 155 }}><span className="badge" style={{ fontSize: 11.5 }}>{mod.targetLabel}</span></div>
+      <div className="mono" style={{ width: 60, textAlign: 'center', color: 'var(--text-4)', fontSize: 12 }}>{mod.fileCount || '—'}</div>
       <div style={{ width: 60, textAlign: 'center' }}>
-        {hasDeps ? <span title={`${t('Missing')}: ${missingDeps.join(', ')}`} style={{ color: 'var(--red-bright)', fontSize: 16, cursor: 'help' }}>⚠️</span> :
-         hasConflict ? <span title={conflictText} style={{ color: 'var(--accent)', fontSize: 18, animation: 'pulse 2s infinite', cursor: 'help' }}>⚡</span> :
+        {hasDeps ? <span title={`${t('Missing')}: ${missingDeps.join(', ')}`} style={{ color: 'var(--accent)', cursor: 'help', display: 'inline-flex' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
+          </span> :
+         hasConflict ? <span title={conflictText} style={{ color: 'var(--info-bright)', cursor: 'help', display: 'inline-flex' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z" /></svg>
+          </span> :
          <span style={{ color: 'var(--text-4)' }}>—</span>}
       </div>
       <div style={{ width: 100, display: 'flex', gap: 5, justifyContent: 'center' }}>
-        <button className="btn btn-ghost btn-sm" disabled={anyToggling} onClick={() => onMarkCore(!isCore)} title={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')}>{isCore ? '🔓' : '🔒'}</button>
-        {!isCore && <button className="btn btn-danger btn-sm" disabled={anyToggling} onClick={anyToggling ? undefined : onRemove}>🗑</button>}
+        <button className="btn btn-ghost btn-sm btn-icon" disabled={anyToggling} onClick={() => onMarkCore(!isCore)} aria-label={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')} title={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="4" y="10" width="16" height="10" rx="2" />{isCore ? <path d="M8 10V7a4 4 0 0 1 7-2.6" /> : <path d="M8 10V7a4 4 0 0 1 8 0v3" />}
+          </svg>
+        </button>
+        {!isCore && <button className="btn btn-danger btn-sm btn-icon" disabled={anyToggling} onClick={anyToggling ? undefined : onRemove} aria-label={t('Remove')}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /></svg>
+        </button>}
       </div>
       {busy && (
         <div style={{ position: 'absolute', left: 0, bottom: 0, height: 3, width: '100%', background: 'var(--bg-active)', overflow: 'hidden' }}>

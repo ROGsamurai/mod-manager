@@ -1,128 +1,139 @@
-// 10 themes: 5 dark, 5 light
-export const THEMES = [
-  // ── DARK THEMES ──
-  {
-    id: 'midnight', name: 'Midnight', group: 'dark',
-    vars: {
-      '--bg-deep':'#111','--bg-base':'#181818','--bg-surface':'#1e1e1e','--bg-elevated':'#272727',
-      '--bg-hover':'#333','--bg-active':'#3a3a3a',
-      '--accent':'#da9b3c','--accent-dim':'#b07830','--accent-glow':'rgba(218,155,60,.25)',
-      '--green':'#3d8c35','--green-bright':'#5cb950','--red':'#8b2020','--red-bright':'#c0392b',
-      '--text':'#f0f0f0','--text-2':'#cccccc','--text-3':'#999999','--text-4':'#707070',
-      '--border':'#2e2e2e','--border-2':'#3e3e3e',
-      '--scrollbar':'#444','--scrollbar-hover':'#666',
-    }
-  },
-  {
-    id: 'cyberpunk', name: 'Cyberpunk', group: 'dark',
-    vars: {
-      '--bg-deep':'#0a0a14','--bg-base':'#12121e','--bg-surface':'#1a1a2e','--bg-elevated':'#22223a',
-      '--bg-hover':'#2e2e4a','--bg-active':'#363658',
-      '--accent':'#e040fb','--accent-dim':'#ab47bc','--accent-glow':'rgba(224,64,251,.25)',
-      '--green':'#00e676','--green-bright':'#69f0ae','--red':'#8b2020','--red-bright':'#ff1744',
-      '--text':'#eeeeff','--text-2':'#c0c0dd','--text-3':'#8888aa','--text-4':'#606080',
-      '--border':'#2a2a44','--border-2':'#3a3a55',
-      '--scrollbar':'#3a3a55','--scrollbar-hover':'#5a5a77',
-    }
-  },
-  {
-    id: 'forest', name: 'Forest', group: 'dark',
-    vars: {
-      '--bg-deep':'#0c1a0c','--bg-base':'#142014','--bg-surface':'#1a2a1a','--bg-elevated':'#233223',
-      '--bg-hover':'#2e422e','--bg-active':'#385038',
-      '--accent':'#66bb6a','--accent-dim':'#43a047','--accent-glow':'rgba(102,187,106,.25)',
-      '--green':'#4caf50','--green-bright':'#81c784','--red':'#8b2020','--red-bright':'#c0392b',
-      '--text':'#e8f5e9','--text-2':'#c8e6c9','--text-3':'#81a882','--text-4':'#5a7a5b',
-      '--border':'#2a3d2a','--border-2':'#3a4e3a',
-      '--scrollbar':'#3a4e3a','--scrollbar-hover':'#5a705a',
-    }
-  },
-  {
-    id: 'ocean', name: 'Ocean', group: 'dark',
-    vars: {
-      '--bg-deep':'#0a1520','--bg-base':'#101d2a','--bg-surface':'#162535','--bg-elevated':'#1e3040',
-      '--bg-hover':'#283e50','--bg-active':'#304a5e',
-      '--accent':'#29b6f6','--accent-dim':'#0288d1','--accent-glow':'rgba(41,182,246,.25)',
-      '--green':'#3d8c35','--green-bright':'#5cb950','--red':'#8b2020','--red-bright':'#c0392b',
-      '--text':'#e0f0ff','--text-2':'#b0d0ee','--text-3':'#7099bb','--text-4':'#4a7090',
-      '--border':'#1e3348','--border-2':'#2a4058',
-      '--scrollbar':'#2a4058','--scrollbar-hover':'#3a5a78',
-    }
-  },
-  {
-    id: 'crimson', name: 'Crimson', group: 'dark',
-    vars: {
-      '--bg-deep':'#140a0a','--bg-base':'#1e1212','--bg-surface':'#281a1a','--bg-elevated':'#332222',
-      '--bg-hover':'#442e2e','--bg-active':'#503838',
-      '--accent':'#ef5350','--accent-dim':'#c62828','--accent-glow':'rgba(239,83,80,.25)',
-      '--green':'#3d8c35','--green-bright':'#5cb950','--red':'#b71c1c','--red-bright':'#e53935',
-      '--text':'#fce4ec','--text-2':'#e0b0b8','--text-3':'#a07078','--text-4':'#705058',
-      '--border':'#3a2020','--border-2':'#4a3030',
-      '--scrollbar':'#4a3030','--scrollbar-hover':'#6a4a4a',
-    }
-  },
+// ─────────────────────────────────────────────────────────────────────────────
+// Themes — v2.0
+//
+// A theme is now declared as a handful of values and expanded into the full
+// variable set by buildTheme(). Adding a palette is a few lines rather than a
+// 20-line block, and every theme automatically picks up any new token added to
+// the base scale.
+//
+// ids are preserved from v1 so a saved theme preference keeps working.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // ── LIGHT THEMES ──
-  {
+/** rgba() string from a hex colour — used for the tinted fills and glows. */
+function tint(hex, alpha) {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+/**
+ * Expand a compact spec into the full variable set.
+ *
+ * surfaces  deepest → highest: [deep, base, surface, elevated, hover, active]
+ * texts     brightest → dimmest: [text, text-2, text-3, text-4]
+ * borders   [border, border-2]
+ * accent    [accent, accent-dim] — accent-dim is the hover/darker step
+ * onAccent  text colour that sits ON a solid accent fill
+ * status    [green, greenBright, red, redBright, info, infoBright]
+ */
+function buildTheme({ id, name, group, surfaces, texts, borders, accent, onAccent, status }) {
+  const [deep, base, surface, elevated, hover, active] = surfaces;
+  const [t1, t2, t3, t4] = texts;
+  const [b1, b2] = borders;
+  const [acc, accDim] = accent;
+  const [green, greenBright, red, redBright, info, infoBright] = status;
+  return {
+    id, name, group,
+    vars: {
+      '--bg-deep': deep, '--bg-base': base, '--bg-surface': surface,
+      '--bg-elevated': elevated, '--bg-hover': hover, '--bg-active': active,
+
+      '--accent': acc, '--accent-dim': accDim,
+      '--accent-glow': tint(acc, .25), '--accent-soft': tint(acc, group === 'light' ? .14 : .12),
+      '--accent-border': tint(acc, group === 'light' ? .38 : .30), '--on-accent': onAccent,
+
+      '--green': green, '--green-bright': greenBright,
+      '--green-soft': tint(greenBright, group === 'light' ? .14 : .12), '--green-border': tint(greenBright, .30),
+      '--red': red, '--red-bright': redBright,
+      '--red-soft': tint(redBright, group === 'light' ? .12 : .10), '--red-border': tint(redBright, .32),
+      '--info': info, '--info-bright': infoBright,
+      '--info-soft': tint(infoBright, .12), '--info-border': tint(infoBright, .28),
+
+      '--text': t1, '--text-2': t2, '--text-3': t3, '--text-4': t4,
+      '--border': b1, '--border-2': b2,
+      '--scrollbar': b2, '--scrollbar-hover': t4,
+    },
+  };
+}
+
+const DARK_STATUS = ['#2f9c4e', '#46c46a', '#a33a32', '#e06a60', '#4a7fc1', '#6fa8e8'];
+const LIGHT_STATUS = ['#2e7d32', '#3aa049', '#b3342b', '#d0463c', '#2f6fb5', '#3f86d4'];
+
+export const THEMES = [
+  // ── DARK ──────────────────────────────────────────────────────────────────
+  buildTheme({
+    id: 'midnight', name: 'Midnight', group: 'dark',
+    surfaces: ['#0e1014', '#121519', '#14181e', '#1c232c', '#222a34', '#2a3340'],
+    texts: ['#e9ecf1', '#cdd5e0', '#7f8b9c', '#5b6676'],
+    borders: ['#1d242c', '#262e39'],
+    accent: ['#e8a33d', '#c46a1f'], onAccent: '#17120a', status: DARK_STATUS,
+  }),
+  buildTheme({
+    id: 'cyberpunk', name: 'Cyberpunk', group: 'dark',
+    surfaces: ['#0b0a14', '#100f1c', '#141326', '#1d1b33', '#262343', '#302c52'],
+    texts: ['#eceaff', '#c9c5e8', '#8983b0', '#635e85'],
+    borders: ['#221f3a', '#2d2a4a'],
+    accent: ['#d94ff0', '#a134bd'], onAccent: '#140a17', status: ['#12a361', '#22d38a', '#a3283f', '#f0506e', '#4a6fd0', '#7b9bff'],
+  }),
+  buildTheme({
+    id: 'forest', name: 'Forest', group: 'dark',
+    surfaces: ['#0b1210', '#0f1a16', '#121f1a', '#1a2c25', '#223930', '#2a463b'],
+    texts: ['#e7f2ec', '#c4d8cd', '#7d9489', '#5a6f66'],
+    borders: ['#1b2b25', '#243830'],
+    accent: ['#5fbf72', '#3d8f4f'], onAccent: '#0a1410', status: DARK_STATUS,
+  }),
+  buildTheme({
+    id: 'ocean', name: 'Ocean', group: 'dark',
+    surfaces: ['#0a121b', '#0e1926', '#111e2e', '#18293d', '#1f354d', '#26415d'],
+    texts: ['#e6eef7', '#c3d3e4', '#7b8fa5', '#596b80'],
+    borders: ['#182838', '#213448'],
+    accent: ['#3fb6e8', '#1d7fac'], onAccent: '#08131b', status: DARK_STATUS,
+  }),
+  buildTheme({
+    id: 'crimson', name: 'Crimson', group: 'dark',
+    surfaces: ['#140d0e', '#1a1113', '#1f1518', '#2b1e21', '#37272b', '#443035'],
+    texts: ['#f4eaec', '#dcc8cc', '#9c8286', '#75605f'],
+    borders: ['#2c1e21', '#38282c'],
+    accent: ['#e05263', '#b02a3c'], onAccent: '#1a0b0e', status: DARK_STATUS,
+  }),
+
+  // ── LIGHT ─────────────────────────────────────────────────────────────────
+  buildTheme({
     id: 'clean', name: 'Clean', group: 'light',
-    vars: {
-      '--bg-deep':'#f5f5f5','--bg-base':'#ffffff','--bg-surface':'#fafafa','--bg-elevated':'#ffffff',
-      '--bg-hover':'#eaeaea','--bg-active':'#e0e0e0',
-      '--accent':'#1976d2','--accent-dim':'#1565c0','--accent-glow':'rgba(25,118,210,.15)',
-      '--green':'#2e7d32','--green-bright':'#43a047','--red':'#c62828','--red-bright':'#e53935',
-      '--text':'#1a1a1a','--text-2':'#333333','--text-3':'#777777','--text-4':'#aaaaaa',
-      '--border':'#e0e0e0','--border-2':'#cccccc',
-      '--scrollbar':'#ccc','--scrollbar-hover':'#aaa',
-    }
-  },
-  {
+    surfaces: ['#eef0f3', '#f7f8fa', '#ffffff', '#f1f3f6', '#e5e8ed', '#d9dde4'],
+    texts: ['#151a21', '#3b444f', '#6d7885', '#98a1ad'],
+    borders: ['#e0e4ea', '#cbd2db'],
+    accent: ['#c2761b', '#9a5b12'], onAccent: '#ffffff', status: LIGHT_STATUS,
+  }),
+  buildTheme({
     id: 'cream', name: 'Cream', group: 'light',
-    vars: {
-      '--bg-deep':'#f5f0e8','--bg-base':'#fdf8f0','--bg-surface':'#faf5ec','--bg-elevated':'#fff8ee',
-      '--bg-hover':'#efe8d8','--bg-active':'#e5dcc8',
-      '--accent':'#8d6e3f','--accent-dim':'#6d5530','--accent-glow':'rgba(141,110,63,.15)',
-      '--green':'#558b2f','--green-bright':'#7cb342','--red':'#bf360c','--red-bright':'#e64a19',
-      '--text':'#3e2c1a','--text-2':'#5a4530','--text-3':'#8a7560','--text-4':'#b0a090',
-      '--border':'#e0d5c5','--border-2':'#ccc0aa',
-      '--scrollbar':'#ccc0aa','--scrollbar-hover':'#aa9880',
-    }
-  },
-  {
+    surfaces: ['#f3eee4', '#fbf7ef', '#fffdf8', '#f5efe3', '#eae2d2', '#ddd3bf'],
+    texts: ['#1f1a12', '#463d2e', '#7c7160', '#a79c88'],
+    borders: ['#e7ded0', '#d3c8b4'],
+    accent: ['#b06c17', '#8a5210'], onAccent: '#fffdf8', status: LIGHT_STATUS,
+  }),
+  buildTheme({
     id: 'lavender', name: 'Lavender', group: 'light',
-    vars: {
-      '--bg-deep':'#f0edf8','--bg-base':'#f8f5ff','--bg-surface':'#f4f0fc','--bg-elevated':'#faf7ff',
-      '--bg-hover':'#e8e0f5','--bg-active':'#ddd5ee',
-      '--accent':'#7e57c2','--accent-dim':'#5e35b1','--accent-glow':'rgba(126,87,194,.15)',
-      '--green':'#2e7d32','--green-bright':'#43a047','--red':'#c62828','--red-bright':'#e53935',
-      '--text':'#1a1030','--text-2':'#3a2a50','--text-3':'#7a6a90','--text-4':'#a8a0b8',
-      '--border':'#ddd5ee','--border-2':'#c8bedd',
-      '--scrollbar':'#c8bedd','--scrollbar-hover':'#a89abb',
-    }
-  },
-  {
+    surfaces: ['#efecf6', '#f8f6fd', '#ffffff', '#f2eefa', '#e5def3', '#d7cdeb'],
+    texts: ['#1a1428', '#3e3355', '#726788', '#9e95b0'],
+    borders: ['#e3dcf0', '#cfc4e3'],
+    accent: ['#6f45c0', '#54309a'], onAccent: '#ffffff', status: LIGHT_STATUS,
+  }),
+  buildTheme({
     id: 'mint', name: 'Mint', group: 'light',
-    vars: {
-      '--bg-deep':'#ecf5f0','--bg-base':'#f5fdf8','--bg-surface':'#f0faf5','--bg-elevated':'#f8fff8',
-      '--bg-hover':'#ddf0e5','--bg-active':'#cce8d8',
-      '--accent':'#00897b','--accent-dim':'#00695c','--accent-glow':'rgba(0,137,123,.15)',
-      '--green':'#2e7d32','--green-bright':'#43a047','--red':'#c62828','--red-bright':'#e53935',
-      '--text':'#1a2e22','--text-2':'#304a38','--text-3':'#6a8a72','--text-4':'#99b8a2',
-      '--border':'#c8e0d0','--border-2':'#aacebb',
-      '--scrollbar':'#aacebb','--scrollbar-hover':'#88b49a',
-    }
-  },
-  {
+    surfaces: ['#e9f3ee', '#f5fbf8', '#ffffff', '#eef7f2', '#dcece4', '#c9e0d5'],
+    texts: ['#11241b', '#2f4a3b', '#658474', '#94ad9f'],
+    borders: ['#dcebe3', '#c3dbd0'],
+    accent: ['#0d8074', '#0a615a'], onAccent: '#ffffff', status: LIGHT_STATUS,
+  }),
+  buildTheme({
     id: 'sunrise', name: 'Sunrise', group: 'light',
-    vars: {
-      '--bg-deep':'#f8f0e8','--bg-base':'#fff8f0','--bg-surface':'#fdf5ec','--bg-elevated':'#fff5e8',
-      '--bg-hover':'#f0e0d0','--bg-active':'#e8d4c0',
-      '--accent':'#e65100','--accent-dim':'#bf360c','--accent-glow':'rgba(230,81,0,.15)',
-      '--green':'#2e7d32','--green-bright':'#43a047','--red':'#c62828','--red-bright':'#e53935',
-      '--text':'#2a1a0a','--text-2':'#4a3520','--text-3':'#8a7060','--text-4':'#b0a090',
-      '--border':'#e8d8c8','--border-2':'#d0c0aa',
-      '--scrollbar':'#d0c0aa','--scrollbar-hover':'#b0a088',
-    }
-  },
+    surfaces: ['#f6ece3', '#fdf6ee', '#fffaf4', '#f7ede1', '#eddccb', '#e0cab2'],
+    texts: ['#241608', '#4a3520', '#84705c', '#b0a08c'],
+    borders: ['#ecdccb', '#d8c4ab'],
+    accent: ['#d05a13', '#a3430c'], onAccent: '#fffaf4', status: LIGHT_STATUS,
+  }),
 ];
 
 export function applyTheme(themeId) {
@@ -131,8 +142,11 @@ export function applyTheme(themeId) {
   for (const [key, value] of Object.entries(theme.vars)) {
     root.style.setProperty(key, value);
   }
-  // Update scrollbar colors (can't use CSS vars in scrollbar pseudo-elements in all browsers)
-  // We'll handle this with a style tag
+  // Marks the document for anything that needs to know light from dark.
+  root.setAttribute('data-theme-group', theme.group);
+
+  // Scrollbar pseudo-elements don't reliably pick up custom properties, so they
+  // get a generated rule instead.
   let styleEl = document.getElementById('theme-scrollbar');
   if (!styleEl) {
     styleEl = document.createElement('style');

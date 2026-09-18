@@ -1,53 +1,210 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Real TCG Overhaul Mod Manager — v2.0 base styles
+
+   Everything visual is driven by the custom properties below, so a theme is a
+   palette swap and nothing more (see themes.js). Components reach for the
+   classes in this file rather than hard-coding colours, radii or shadows inline.
+   ───────────────────────────────────────────────────────────────────────────── */
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 :root {
-  --bg-deep: #111; --bg-base: #181818; --bg-surface: #1e1e1e; --bg-elevated: #272727;
-  --bg-hover: #333; --bg-active: #3a3a3a;
-  --accent: #da9b3c; --accent-dim: #b07830; --accent-glow: rgba(218,155,60,.25);
-  --green: #3d8c35; --green-bright: #5cb950; --red: #8b2020; --red-bright: #c0392b;
-  --info: #3d7fd9; --info-bright: #5b9bf1;
-  --text: #f0f0f0; --text-2: #cccccc; --text-3: #999999; --text-4: #707070;
-  --border: #2e2e2e; --border-2: #3e3e3e;
-  --scrollbar: #444; --scrollbar-hover: #666;
-  --font: 'Rajdhani', sans-serif; --mono: 'Share Tech Mono', monospace;
-  --radius: 4px; --radius-lg: 8px;
+  /* Surfaces, deepest to highest. bg-deep is the app ground; bg-surface is a
+     card; bg-elevated is a control sitting on a card. */
+  --bg-deep: #0e1014; --bg-base: #121519; --bg-surface: #14181e; --bg-elevated: #1c232c;
+  --bg-hover: #222a34; --bg-active: #2a3340;
+
+  --accent: #e8a33d; --accent-dim: #c46a1f; --accent-glow: rgba(232,163,61,.25);
+  /* Tinted fills for badges and quiet buttons — never a solid accent block. */
+  --accent-soft: rgba(232,163,61,.12); --accent-border: rgba(232,163,61,.30);
+  --on-accent: #17120a;
+
+  --green: #2f9c4e; --green-bright: #46c46a;
+  --green-soft: rgba(70,196,106,.12); --green-border: rgba(70,196,106,.30);
+  --red: #a33a32; --red-bright: #e06a60;
+  --red-soft: rgba(199,62,53,.10); --red-border: rgba(199,62,53,.32);
+  --info: #4a7fc1; --info-bright: #6fa8e8;
+  --info-soft: rgba(111,168,232,.12); --info-border: rgba(111,168,232,.28);
+
+  --text: #e9ecf1; --text-2: #cdd5e0; --text-3: #7f8b9c; --text-4: #5b6676;
+
+  --border: #1d242c; --border-2: #262e39;
+  --scrollbar: #2a323d; --scrollbar-hover: #3b4552;
+
+  --font: 'Chakra Petch', 'Rajdhani', 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', 'Share Tech Mono', ui-monospace, monospace;
+
+  --radius-sm: 8px; --radius: 10px; --radius-lg: 14px; --radius-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.30);
+  --shadow-2: 0 10px 30px rgba(0,0,0,.45);
+  --ring: 0 0 0 3px var(--accent-glow);
 }
+
 html, body, #root { height: 100%; overflow: hidden; }
-body { font-family: var(--font); font-size: 16px; color: var(--text); background: var(--bg-deep); -webkit-font-smoothing: antialiased; user-select: none; }
-::-webkit-scrollbar { width: 14px; } ::-webkit-scrollbar-track { background: transparent; margin-right: 2px; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; } ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); border: 3px solid transparent; background-clip: padding-box; }
+body {
+  font-family: var(--font); font-size: 15px; color: var(--text);
+  background: var(--bg-deep);
+  -webkit-font-smoothing: antialiased; user-select: none;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: var(--radius-pill); border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); border: 3px solid transparent; background-clip: padding-box; }
+
+/* ── Animation ────────────────────────────────────────────────────────────── */
 @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
 @keyframes slideDown { from { opacity:0; transform: translateY(-6px) } to { opacity:1; transform: translateY(0) } }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 @keyframes spin { to { transform: rotate(360deg) } }
 @keyframes ctIndeterminate { 0%{margin-left:-30%;width:30%} 50%{width:45%} 100%{margin-left:100%;width:30%} }
-@keyframes dropGlow { 0%,100%{box-shadow:inset 0 0 20px var(--accent-glow)} 50%{box-shadow:inset 0 0 50px var(--accent-glow)} }
-/* Subtle pulsing glow for mods waiting to be updated — draws the eye without being loud */
+@keyframes dropGlow { 0%,100%{box-shadow:inset 0 0 24px var(--accent-glow)} 50%{box-shadow:inset 0 0 52px var(--accent-glow)} }
+/* Mods waiting to be updated: a quiet border breathe, not a loud halo. */
 @keyframes updateGlow {
-  0%,100% { box-shadow: 0 0 0 1px var(--accent), 0 0 8px rgba(218,155,60,.25); }
-  50%     { box-shadow: 0 0 0 1px var(--accent), 0 0 18px rgba(218,155,60,.55); }
+  0%,100% { border-color: var(--accent-border); }
+  50%     { border-color: var(--accent); }
 }
+/* The "Update Ready" pill breathes in step with the card border so the two read
+   as one signal rather than two competing ones. */
+@keyframes pillPulse {
+  0%,100% { border-color: var(--info-border); box-shadow: 0 0 0 0 var(--info-soft); }
+  50%     { border-color: var(--info-bright); box-shadow: 0 0 0 4px var(--info-soft); }
+}
+.pill-pulse { animation: pillPulse 2.4s ease-in-out infinite; }
+
 @keyframes updateBtnGlow {
-  0%,100% { box-shadow: 0 0 4px rgba(218,155,60,.4); }
-  50%     { box-shadow: 0 0 14px rgba(218,155,60,.8); }
+  0%,100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50%     { box-shadow: 0 0 0 4px var(--accent-glow); }
 }
-/* Green-tinted variant for the "Update All" header button, which uses the green accent */
 @keyframes updateAllBtnGlow {
-  0%,100% { box-shadow: 0 0 4px rgba(92,185,80,.4); }
-  50%     { box-shadow: 0 0 14px rgba(92,185,80,.85); }
+  0%,100% { box-shadow: 0 0 0 0 var(--green-soft); }
+  50%     { box-shadow: 0 0 0 4px var(--green-soft); }
 }
+
 .drag-region { -webkit-app-region: drag; } .no-drag { -webkit-app-region: no-drag; }
+
+/* ── Controls ─────────────────────────────────────────────────────────────── */
 button { cursor: pointer; font-family: var(--font); border: none; outline: none; }
-input, select { font-family: var(--font); outline: none; }
-.btn { padding: 8px 16px; border-radius: var(--radius); font-weight: 600; font-size: 15px; transition: all .15s; display: inline-flex; align-items: center; gap: 6px; }
-.btn-accent { background: var(--accent); color: var(--bg-deep); } .btn-accent:hover { background: var(--accent-dim); }
-.btn-danger { background: var(--red); color: #fcc; } .btn-danger:hover { background: var(--red-bright); }
-.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border-2); } .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
-.btn-sm { padding: 5px 12px; font-size: 14px; }
-.input { background: var(--bg-base); color: var(--text-2); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 8px 12px; font-size: 15px; width: 100%; transition: border-color .15s; }
-.input:focus { border-color: var(--accent); }
-.select { background: var(--bg-base); color: var(--text-2); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 8px 12px; font-size: 15px; cursor: pointer; }
-.badge { padding: 3px 10px; border-radius: 10px; font-size: 13px; font-weight: 700; font-family: var(--mono); }
-.toast { position: fixed; top: 14px; right: 14px; padding: 12px 24px; border-radius: var(--radius); font-weight: 600; font-size: 15px; z-index: 9999; box-shadow: 0 4px 24px rgba(0,0,0,.6); animation: slideDown .25s ease; pointer-events: none; }
-.toast-success { background: var(--green); color: #fff; } .toast-error { background: var(--red-bright); color: #fff; }
-.toast-info { background: var(--bg-active); color: var(--text); border: 1px solid var(--border-2); } .toast-warn { background: #8b4513; color: #fff; }
-.spinner { width: 20px; height: 20px; border: 2px solid var(--border-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+input, select, textarea { font-family: var(--font); outline: none; }
+
+.btn {
+  height: 38px; padding: 0 16px; border-radius: var(--radius);
+  font-weight: 600; font-size: 14px; letter-spacing: .1px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border: 1px solid transparent; white-space: nowrap;
+  transition: background .14s ease, border-color .14s ease, color .14s ease, box-shadow .14s ease;
+}
+.btn:focus-visible { box-shadow: var(--ring); }
+.btn-accent { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.btn-accent:hover:not(:disabled) { background: var(--accent-dim); }
+.btn-success { background: var(--green-bright); color: var(--on-accent); font-weight: 700; }
+.btn-success:hover:not(:disabled) { background: var(--green); color: #fff; }
+.btn-danger { background: var(--red-soft); border-color: var(--red-border); color: var(--red-bright); }
+.btn-danger:hover:not(:disabled) { background: var(--red); color: #fff; border-color: var(--red); }
+.btn-ghost { background: var(--bg-elevated); border-color: var(--border-2); color: var(--text-2); }
+.btn-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.btn-quiet { background: transparent; border-color: transparent; color: var(--text-3); }
+.btn-quiet:hover:not(:disabled) { background: var(--bg-elevated); color: var(--text); }
+.btn-sm { height: 32px; padding: 0 12px; font-size: 13px; border-radius: var(--radius-sm); }
+.btn-icon { width: 34px; height: 34px; padding: 0; border-radius: var(--radius-sm); }
+.btn-icon.btn-sm { width: 32px; height: 32px; }
+
+.input, .select, .textarea {
+  background: var(--bg-deep); color: var(--text-2);
+  border: 1px solid var(--border-2); border-radius: var(--radius);
+  padding: 9px 12px; font-size: 14px; width: 100%;
+  transition: border-color .14s ease, box-shadow .14s ease;
+}
+.input:focus, .select:focus, .textarea:focus { border-color: var(--accent); box-shadow: var(--ring); }
+.select { cursor: pointer; width: auto; }
+
+/* ── Surfaces ─────────────────────────────────────────────────────────────── */
+/* A card is the unit of the UI: one mod, one panel, one group. */
+.card {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+  transition: border-color .14s ease, background .14s ease;
+}
+.card-hover:hover { border-color: var(--border-2); background: var(--bg-base); }
+.card-accent { border-color: var(--accent-border); }
+.card-danger { border-color: var(--red-border); }
+.panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
+
+/* Small uppercase label above a value — the "INSTALLS TO" pattern. */
+.label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  color: var(--text-4); text-transform: uppercase;
+}
+.mono { font-family: var(--mono); }
+.muted { color: var(--text-3); }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+.page-title { font-size: 26px; font-weight: 700; letter-spacing: -.2px; margin: 0 0 4px 0; }
+.page-sub { font-size: 14px; color: var(--text-3); margin: 0; }
+
+/* ── Badges and pills ─────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600;
+  font-family: var(--mono); border: 1px solid var(--border-2);
+  background: var(--bg-elevated); color: var(--text-2);
+}
+.badge-accent { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent); }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; border-radius: var(--radius-pill);
+  font-size: 11.5px; font-weight: 600; border: 1px solid var(--border-2);
+  background: var(--bg-elevated); color: var(--text-2);
+}
+.pill-accent { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent); }
+.pill-success { background: var(--green-soft); border-color: var(--green-border); color: var(--green-bright); }
+.pill-danger { background: var(--red-soft); border-color: var(--red-border); color: var(--red-bright); }
+.pill-info { background: var(--info-soft); border-color: var(--info-border); color: var(--info-bright); }
+
+/* Status dot with a soft ring — used by Mod Status. */
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.dot-ok { background: var(--green-bright); box-shadow: 0 0 0 3px var(--green-soft); }
+.dot-bad { background: var(--red-bright); box-shadow: 0 0 0 3px var(--red-soft); }
+.dot-warn { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ── Navigation ───────────────────────────────────────────────────────────── */
+.nav-item {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 12px; border-radius: var(--radius);
+  color: var(--text-3); font-size: 14.5px; font-weight: 600;
+  background: transparent; width: 100%; text-align: left;
+  transition: background .14s ease, color .14s ease, box-shadow .14s ease;
+}
+.nav-item:hover { background: var(--bg-elevated); color: var(--text-2); }
+.nav-item.active { background: var(--bg-elevated); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.nav-count {
+  margin-left: auto; font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  background: var(--bg-hover); color: var(--text-3);
+  border-radius: var(--radius-pill); padding: 2px 8px;
+}
+.nav-item.active .nav-count { background: var(--accent); color: var(--on-accent); }
+
+/* ── Progress ─────────────────────────────────────────────────────────────── */
+.progress { height: 5px; border-radius: var(--radius-pill); background: var(--bg-elevated); overflow: hidden; }
+.progress > .bar { height: 100%; border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--accent-dim), var(--accent)); transition: width .2s ease; }
+.progress > .bar-indeterminate { height: 100%; border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--accent-dim), var(--accent)); animation: ctIndeterminate 1.1s ease-in-out infinite; }
+
+/* ── Toast ────────────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed; top: 64px; right: 22px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 16px; border-radius: var(--radius);
+  font-weight: 600; font-size: 13.5px; max-width: 520px;
+  z-index: 9999; box-shadow: var(--shadow-2);
+  animation: slideDown .2s ease; pointer-events: none;
+  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border-2);
+}
+.toast::before { content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-3); }
+.toast-success::before { background: var(--green-bright); }
+.toast-error::before { background: var(--red-bright); }
+.toast-warn::before { background: var(--accent); }
+.toast-info::before { background: var(--info-bright); }
+
+.spinner { width: 18px; height: 18px; border: 2px solid var(--border-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }

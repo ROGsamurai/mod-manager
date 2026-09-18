@@ -145,30 +145,30 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>📥 {t('Downloaded Mods')}</div>
-          <div style={{ fontSize: 14, color: 'var(--text-3)', marginTop: 2 }}>{t('Add mod archives, choose where each one goes, then install.')}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 20, padding: '24px 24px 18px', flexShrink: 0 }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 className="page-title">{t('Staged Mods')}</h1>
+          <p className="page-sub">{t('Archives waiting to be installed. The manager decides where each one goes.')}</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-ghost" onClick={onAdd} disabled={isBusy}>{t('+ Add Archives')}</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+          <button className="btn btn-ghost" onClick={onAdd} disabled={isBusy}>{t('Add Archives')}</button>
           {newCount > 0 && <button className="btn btn-accent" onClick={doInstallNew} disabled={isBusy || !gameFound}>
-            {bulkAction === 'installNew' ? '⏳' : '📥'} {bulkAction === 'installNew' ? t('Installing...') : `${t('Install New')} (${newCount})`}
+            {bulkAction === 'installNew' ? t('Installing...') : `${t('Install New')} (${newCount})`}
           </button>}
-          {updateCount > 0 && <button className="btn btn-accent" onClick={doUpdateAll} disabled={isBusy || !gameFound} style={{ background: 'var(--green)', animation: bulkAction === 'updateAll' ? 'none' : 'updateAllBtnGlow 2.4s ease-in-out infinite' }}>
-            {bulkAction === 'updateAll' ? '⏳' : '⬆️'} {bulkAction === 'updateAll' ? t('Updating...') : `${t('Update All')} (${updateCount})`}
+          {updateCount > 0 && <button className="btn btn-success" onClick={doUpdateAll} disabled={isBusy || !gameFound} style={{ animation: bulkAction === 'updateAll' ? 'none' : 'updateAllBtnGlow 2.4s ease-in-out infinite' }}>
+            {bulkAction === 'updateAll' ? t('Updating...') : `${t('Update All')} (${updateCount})`}
           </button>}
-          {stagedSorted.length > 0 && !confirmClear && <button className="btn btn-ghost" onClick={() => setConfirmClear(true)} disabled={isBusy} style={{ color: 'var(--red-bright)', borderColor: 'var(--red)' }}>🗑 {t('Clear All')}</button>}
+          {stagedSorted.length > 0 && !confirmClear && <button className="btn btn-danger" onClick={() => setConfirmClear(true)} disabled={isBusy}>{t('Clear All')}</button>}
           {confirmClear && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: 'var(--red-bright)' }}>{t('Are you sure?')}</span>
-            <button className="btn btn-danger btn-sm" onClick={doClearAll}>✓ {t('Yes')}</button>
+            <button className="btn btn-danger btn-sm" onClick={doClearAll}>{t('Yes')}</button>
             <button className="btn btn-ghost btn-sm" onClick={() => setConfirmClear(false)}>{t('Cancel')}</button>
           </div>}
         </div>
       </div>
       {!gameFound && (
-        <div style={{ padding: '12px 20px', background: 'rgba(255,80,80,.10)', borderBottom: '1px solid var(--red)', color: 'var(--red-bright)', fontSize: 14, lineHeight: 1.6, flexShrink: 0 }}>
-          <strong>⚠️ {t('Game not detected')}</strong>
+        <div className="card card-danger" style={{ margin: '0 24px 14px', background: 'var(--red-soft)', color: 'var(--red-bright)', fontSize: 14, lineHeight: 1.6, flexShrink: 0 }}>
+          <strong>{t('Game not detected')}</strong>
           <div style={{ marginTop: 4, color: 'var(--text-3)' }}>
             {t('"Card Shop Simulator.exe" was not found in the selected folder, so installing would put mods where the game cannot load them. Fix the game location in Settings.')}
           </div>
@@ -176,34 +176,54 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
       )}
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         {stagedSorted.length === 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, border: '2px dashed var(--border-2)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-base)', minHeight: 280 }}>
-            <div style={{ fontSize: 52, marginBottom: 16, opacity: .4 }}>📦</div>
-            <div style={{ fontSize: 19, fontWeight: 600, color: 'var(--text-3)', marginBottom: 6 }}>{t('No mod archives staged')}</div>
-            <div style={{ fontSize: 15, color: 'var(--text-4)', textAlign: 'center', lineHeight: 1.8, maxWidth: 420 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 56, border: '1px dashed var(--border-2)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-surface)', minHeight: 280 }}>
+            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginBottom: 16 }}>
+              <path d="M4 7l8-4 8 4v10l-8 4-8-4z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" />
+            </svg>
+            <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>{t('No mod archives staged')}</div>
+            <div style={{ fontSize: 14, color: 'var(--text-4)', textAlign: 'center', lineHeight: 1.7, maxWidth: 420 }}>
               {t('Click "+ Add Archives" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe')}
             </div>
-            <button className="btn btn-ghost" onClick={onAdd} style={{ marginTop: 20 }}>📁 {t('Browse for archives...')}</button>
+            <button className="btn btn-ghost" onClick={onAdd} style={{ marginTop: 20 }}>{t('Browse for archives...')}</button>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {stagedSorted.map(f => {
               const isUpdate = f.status === 'update';
               const isInstalled = f.status === 'reinstall';
               return (
-              <div key={f.filename} style={{ animation: 'fadeIn .2s ease', opacity: isInstalled ? 0.5 : 1, transition: 'opacity .2s' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: isUpdate ? 'rgba(218,155,60,.06)' : 'var(--bg-elevated)', borderRadius: 'var(--radius)', border: `1px solid ${peek === f.filename ? 'var(--accent)' : isUpdate ? 'var(--accent)' : 'var(--border)'}`, animation: isUpdate ? 'updateGlow 2.4s ease-in-out infinite' : undefined }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 'var(--radius)', background: 'var(--bg-active)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>📦</div>
+              <div key={f.filename}
+                className={`card${blockedMap[f.filename] ? ' card-danger' : peek === f.filename || isUpdate ? ' card-accent' : ''}`}
+                style={{ padding: 0, overflow: 'hidden', animation: isUpdate ? 'updateGlow 2.4s ease-in-out infinite' : 'fadeIn .2s ease',
+                  opacity: isInstalled ? 0.5 : 1, transition: 'opacity .2s' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px' }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 11, background: blockedMap[f.filename] ? 'var(--red-soft)' : 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: blockedMap[f.filename] ? 'var(--red-bright)' : isUpdate ? 'var(--accent)' : 'var(--text-3)' }}>
+                    {blockedMap[f.filename] ? (
+                      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>
+                    ) : (
+                      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" /></svg>
+                    )}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontWeight: 600, fontSize: 16, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {tMod(names[f.filename] || f.parsedName || '', '').name}
                       </span>
-                      {f.parsedVersion && <span style={{ fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--accent)', background: 'rgba(218,155,60,.12)', padding: '2px 8px', borderRadius: 3 }}>v{f.parsedVersion}</span>}
+                      {f.parsedVersion && <span className="badge badge-accent">{f.parsedVersion}</span>}
+                      {f.status === 'update' && <span className="pill pill-info pill-pulse">{t('Update Ready')}</span>}
+                      {blockedMap[f.filename] && <span className="pill pill-danger">{t('Blocked')}</span>}
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 2 }}>
-                      {f.filename} · {f.statError ? <span style={{ color: 'var(--red-bright)' }} title={`The manager can list this file but cannot read it (${f.statError}). It is usually locked by OneDrive/antivirus, still downloading, or on a path Windows considers too long. This also prevents deleting and installing it.`}>⚠️ {t('unreadable')} ({f.statError})</span> : fmt(f.size)}
-                      {f.status === 'update' && <span style={{ color: 'var(--accent)', marginLeft: 6 }}>⬆️ {t('updates')} v{f.installedVersion}</span>}
-                      {f.olderVersions?.length > 0 && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}</span>}
+                    {/* Filename on its own line — it is long enough to fill the
+                        row by itself — with size and version notes underneath. */}
+                    <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 4 }}>
+                      {f.filename}
+                    </div>
+                    <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
+                      {f.statError
+                        ? <span style={{ color: 'var(--red-bright)' }} title={`The manager can list this file but cannot read it (${f.statError}). It is usually locked by OneDrive/antivirus, still downloading, or on a path Windows considers too long. This also prevents deleting and installing it.`}>{t('unreadable')} ({f.statError})</span>
+                        : fmt(f.size)}
+                      {f.status === 'update' && <span style={{ color: 'var(--accent)', marginLeft: 8 }}>{t('updates')} v{f.installedVersion}</span>}
+                      {f.olderVersions?.length > 0 && <span style={{ color: 'var(--text-3)', marginLeft: 8 }}>v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}</span>}
                     </div>
                     {/* Blocked notice lives under the mod name, not in the
                         destination column: the reason is a sentence, and putting a
@@ -211,7 +231,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                         filename into one word per line. */}
                     {blockedMap[f.filename] && (
                       <div style={{ fontSize: 13, color: 'var(--red-bright)', marginTop: 4, lineHeight: 1.5 }}>
-                        <b style={{ letterSpacing: 0.5 }}>🛑 {t('Blocked')}</b> — {blockedMap[f.filename].reason}
+                        {blockedMap[f.filename].reason}
                         {blockedMap[f.filename].useInstead && <> {t('Use')} <b>{blockedMap[f.filename].useInstead}</b> {t('instead.')}</>}
                       </div>
                     )}
@@ -221,39 +241,42 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       this is a label, not a control. Users picking the wrong target
                       was a common cause of "installed fine but does nothing". */}
                   {!blockedMap[f.filename] && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, width: 180 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{t('Installs To')}</div>
-                      <div style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--mono)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0, width: 160 }}>
+                      <div className="label">{t('Installs To')}</div>
+                      <div className="mono" style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
                         {targetLabel(sels[f.filename])}
                       </div>
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
                     {securityMap[f.filename] && (
-                      <span title={securityMap[f.filename].blocked.length > 0 ? securityMap[f.filename].blocked[0] : securityMap[f.filename].warnings.length > 0 ? securityMap[f.filename].warnings[0] : securityMap[f.filename].verified ? t('Verified Safe') : `✓ ${t('Safe')}`}
-                        style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, cursor: 'default',
-                          background: securityMap[f.filename].blocked.length > 0 ? 'var(--red)' : securityMap[f.filename].warnings.length > 0 ? 'rgba(218,155,60,.2)' : 'rgba(92,185,80,.15)',
-                          color: securityMap[f.filename].blocked.length > 0 ? '#fff' : securityMap[f.filename].warnings.length > 0 ? 'var(--accent)' : 'var(--green-bright)',
-                          border: `1px solid ${securityMap[f.filename].blocked.length > 0 ? 'var(--red)' : securityMap[f.filename].warnings.length > 0 ? 'var(--accent)' : 'var(--green)'}`,
-                        }}>
-                        {securityMap[f.filename].blocked.length > 0 ? '🛑' : securityMap[f.filename].warnings.length > 0 ? '⚠️' : '✅'}
+                      <span className={`pill ${securityMap[f.filename].blocked.length > 0 ? 'pill-danger' : securityMap[f.filename].warnings.length > 0 ? 'pill-accent' : 'pill-success'}`}
+                        title={securityMap[f.filename].blocked.length > 0 ? securityMap[f.filename].blocked[0] : securityMap[f.filename].warnings.length > 0 ? securityMap[f.filename].warnings[0] : securityMap[f.filename].verified ? t('Verified Safe') : t('Safe')}
+                        style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', borderRadius: 'var(--radius-sm)', cursor: 'default' }}>
+                        {securityMap[f.filename].blocked.length > 0 ? (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>
+                        ) : securityMap[f.filename].warnings.length > 0 ? (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
+                        ) : (
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+                        )}
                       </span>
                     )}
                     <button className="btn btn-ghost btn-sm" onClick={() => doPeek(f.filename)}>{peek === f.filename ? '▲' : '▼'}</button>
                     {/* Blocked rows keep only the preview and delete buttons —
                         a disabled Install button still reads as "maybe later". */}
                     {!blockedMap[f.filename] && f.olderVersions?.length > 0 && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => doInstall(f.olderVersions[0].filename)} disabled={isBusy || !gameFound} style={{ color: '#c0392b', borderColor: '#c0392b44' }}>
-                        ⬇️ {t('Downgrade')}
+                      <button className="btn btn-danger btn-sm" onClick={() => doInstall(f.olderVersions[0].filename)} disabled={isBusy || !gameFound}>
+                        {t('Downgrade')}
                       </button>
                     )}
                     {!blockedMap[f.filename] && (
-                      <button className="btn btn-accent btn-sm" onClick={() => doInstall(f.filename)} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
-                        {installing === f.filename ? '⏳' : f.status === 'update' ? '⬆️' : f.status === 'reinstall' ? '🔄' : '📥'}
-                        {' '}{f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
+                      <button className={`btn btn-sm ${f.status === 'reinstall' ? 'btn-ghost' : 'btn-accent'}`} onClick={() => doInstall(f.filename)} disabled={isBusy || !gameFound} style={isUpdate ? { animation: 'updateBtnGlow 2.4s ease-in-out infinite' } : undefined}>
+                        {installing === f.filename && <span className="spinner" style={{ width: 13, height: 13 }} />}
+                        {f.status === 'update' ? t('Update') : f.status === 'reinstall' ? t('Re-install') : t('Install')}
                       </button>
                     )}
-                    <button className="btn btn-danger btn-sm" disabled={removing.has(f.filename)} onClick={async () => {
+                    <button className="btn btn-danger btn-sm btn-icon" aria-label={t('Remove')} disabled={removing.has(f.filename)} onClick={async () => {
                       // A row can represent several archives of the same mod (the
                       // primary plus f.olderVersions). Deleting only the primary
                       // leaves the others on disk and the row instantly re-appears
@@ -278,46 +301,50 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       } finally {
                         setRemoving(prev => { const n = new Set(prev); filenames.forEach(x => n.delete(x)); return n; });
                       }
-                    }}>✕</button>
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
+                    </button>
                   </div>
                 </div>
                 {installing === f.filename && installProgress && (
-                  <div style={{ padding: '8px 16px 12px 16px', background: 'var(--bg-elevated)', borderRadius: '0 0 var(--radius) var(--radius)',
-                    borderTop: 'none', marginTop: -1, border: '1px solid var(--border)', borderTopColor: 'transparent' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12, color: 'var(--text-3)' }}>
-                      <span>{installProgress.phase === 'removing' ? `🧹 ${t('Removing old version')}...` : `📦 ${t('Installing')}...`}</span>
-                      <span>{installProgress.percent >= 0 ? `${installProgress.percent}%` : `${installProgress.done} ${t('files')}`}{installProgress.total > 0 ? ` (${installProgress.done}/${installProgress.total})` : ''}</span>
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7, fontSize: 12.5 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--accent)', fontWeight: 600 }}>
+                        <span className="spinner" style={{ width: 12, height: 12 }} />
+                        {installProgress.phase === 'removing' ? `${t('Removing old version')}...` : `${t('Installing')}...`}
+                      </span>
+                      <span className="mono" style={{ color: 'var(--text-4)' }}>
+                        {installProgress.total > 0 ? `${installProgress.done} / ${installProgress.total}` : `${installProgress.done} ${t('files')}`}
+                        {installProgress.percent >= 0 ? ` · ${installProgress.percent}%` : ''}
+                      </span>
                     </div>
-                    <div style={{ width: '100%', height: 6, background: 'var(--bg-base)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{
-                        width: installProgress.percent >= 0 ? `${installProgress.percent}%` : '100%',
-                        height: '100%', borderRadius: 3, transition: 'width 0.15s ease',
-                        background: installProgress.percent >= 0 ? 'var(--accent)' : 'var(--accent)',
-                        animation: installProgress.percent < 0 ? 'pulse 1.5s infinite' : 'none',
-                      }} />
+                    <div className="progress">
+                      {installProgress.percent >= 0
+                        ? <div className="bar" style={{ width: `${installProgress.percent}%` }} />
+                        : <div className="bar-indeterminate" />}
                     </div>
                   </div>
                 )}
                 {peek === f.filename && preview && (
-                  <div style={{ margin: '0 0 0 56px', padding: 14, background: 'var(--bg-base)', borderRadius: '0 0 var(--radius) var(--radius)', border: '1px solid var(--border)', borderTop: 'none' }}>
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '14px 16px' }}>
                     {/* Security Status */}
                     {preview.security && (
-                      <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 'var(--radius)',
-                        background: preview.security.blocked.length > 0 ? 'rgba(192,57,43,.12)' : preview.security.warnings.length > 0 ? 'rgba(218,155,60,.12)' : 'rgba(92,185,80,.12)',
-                        border: `1px solid ${preview.security.blocked.length > 0 ? 'var(--red)' : preview.security.warnings.length > 0 ? 'var(--accent)' : 'var(--green)'}`,
+                      <div style={{ marginBottom: 14, padding: '9px 13px', borderRadius: 'var(--radius)',
+                        background: preview.security.blocked.length > 0 ? 'var(--red-soft)' : preview.security.warnings.length > 0 ? 'var(--accent-soft)' : 'var(--green-soft)',
+                        border: `1px solid ${preview.security.blocked.length > 0 ? 'var(--red-border)' : preview.security.warnings.length > 0 ? 'var(--accent-border)' : 'var(--green-border)'}`,
                       }}>
                         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: preview.security.blocked.length + preview.security.warnings.length > 0 ? 6 : 0,
                           color: preview.security.blocked.length > 0 ? 'var(--red-bright)' : preview.security.warnings.length > 0 ? 'var(--accent)' : 'var(--green-bright)' }}>
-                          {preview.security.blocked.length > 0 ? `🛑 ${t('BLOCKED')} — ${t('Security threats detected')}` :
-                           preview.security.warnings.length > 0 ? `⚠️ ${t('Warnings')}` :
-                           preview.security.verified ? `✅ ${t('Verified Safe')} — ${preview.security.scanned} ${t('files')} ${t('scanned')}` :
-                           `✅ ${t('Safe')} — ${preview.security.scanned} ${t('files')} ${t('scanned')}`}
+                          {preview.security.blocked.length > 0 ? `${t('BLOCKED')} — ${t('Security threats detected')}` :
+                           preview.security.warnings.length > 0 ? t('Warnings') :
+                           preview.security.verified ? `${t('Verified Safe')} — ${preview.security.scanned} ${t('files')} ${t('scanned')}` :
+                           `${t('Safe')} — ${preview.security.scanned} ${t('files')} ${t('scanned')}`}
                         </div>
                         {preview.security.blocked.map((msg, i) => (
-                          <div key={'b'+i} style={{ fontSize: 12, color: 'var(--red-bright)', padding: '2px 0' }}>🛑 {msg}</div>
+                          <div key={'b'+i} style={{ fontSize: 12, color: 'var(--red-bright)', padding: '2px 0' }}>{msg}</div>
                         ))}
                         {preview.security.warnings.map((msg, i) => (
-                          <div key={'w'+i} style={{ fontSize: 12, color: 'var(--accent)', padding: '2px 0' }}>⚠️ {msg}</div>
+                          <div key={'w'+i} style={{ fontSize: 12, color: 'var(--accent)', padding: '2px 0' }}>{msg}</div>
                         ))}
                       </div>
                     )}
@@ -333,13 +360,14 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       const end = Math.min(total, Math.ceil((previewScroll + CONTENTS_VIEW_H) / CONTENTS_ROW_H) + CONTENTS_OVERSCAN);
                       return (
                         <>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 }}>
-                            {t('Contents')} ({fileCount} {t('files')}{folderCount > 0 ? `, ${folderCount} ${t('folders')}` : ''})
+                          <div className="label" style={{ marginBottom: 8 }}>
+                            {t('Contents')} — {fileCount} {t('files')}{folderCount > 0 ? `, ${folderCount} ${t('folders')}` : ''}
                           </div>
                           <div
                             onScroll={e => setPreviewScroll(e.currentTarget.scrollTop)}
                             style={{ height: Math.min(CONTENTS_VIEW_H, Math.max(CONTENTS_ROW_H, total * CONTENTS_ROW_H)), overflow: 'auto',
-                              fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text-3)' }}>
+                              fontSize: 12.5, fontFamily: 'var(--mono)', color: 'var(--text-3)',
+                              border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--bg-deep)', padding: '6px 10px' }}>
                             <div style={{ height: total * CONTENTS_ROW_H, position: 'relative' }}>
                               {entries.slice(start, end).map((e, i) => {
                                 const idx = start + i;
@@ -347,7 +375,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                                   <div key={idx} title={e.path} style={{ position: 'absolute', top: idx * CONTENTS_ROW_H, left: 0, right: 0,
                                     height: CONTENTS_ROW_H, lineHeight: `${CONTENTS_ROW_H}px`, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                                     color: e.path.endsWith('.dll') ? 'var(--green-bright)' : e.path.startsWith('BepInEx/') ? 'var(--accent)' : 'var(--text-4)' }}>
-                                    {e.isDir ? '📁' : '  '} {e.path}{e.size > 0 && !e.isDir && <span style={{ color: 'var(--text-4)', marginLeft: 8 }}>{fmt(e.size)}</span>}
+                                    {e.isDir ? '▸ ' : '   '}{e.path}{e.size > 0 && !e.isDir && <span style={{ color: 'var(--text-4)', marginLeft: 8 }}>{fmt(e.size)}</span>}
                                   </div>
                                 );
                               })}

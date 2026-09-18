@@ -38,6 +38,13 @@ echo Using electron-builder 24.13.3 (the version that built the
 echo clean 1.0.4 release). Newer builder versions ship a different
 echo portable stub that some antivirus engines false-flag.
 echo.
+echo The FIRST build after an Electron version change downloads the
+echo Electron runtime from GitHub (about 150 MB, in 8 parts). It can
+echo sit on the "downloading" line for several minutes with no visible
+echo progress - that is the download, not a hang. It is cached in
+echo   %%LOCALAPPDATA%%\electron\Cache
+echo so every later build skips it and takes seconds.
+echo.
 call npx electron-builder@24.13.3 --win
 if %errorlevel% neq 0 (
     color 0C & echo.
