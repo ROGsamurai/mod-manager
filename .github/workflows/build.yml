@@ -22,7 +22,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Electron 42 and its @electron/get declare "node >= 22.12.0"; on 20
+          # every install printed EBADENGINE warnings. Your local Node is 24, so
+          # this also keeps CI and your machine on the same major.
+          node-version: '22'
           cache: 'npm'
 
       # npm ci installs exactly what package-lock.json pins, so the build can't
@@ -55,7 +58,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Electron 42 and its @electron/get declare "node >= 22.12.0"; on 20
+          # every install printed EBADENGINE warnings. Your local Node is 24, so
+          # this also keeps CI and your machine on the same major.
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
