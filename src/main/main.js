@@ -345,15 +345,7 @@ ipcMain.handle('updates:check', async (_e, force) => {
   try { return await updateChecker.check(modManager.getInstalledMods(), !!force); }
   catch (e) { console.error('[updates:check]', e); return { enabled: false, updates: {}, error: e.message }; }
 });
-ipcMain.handle('updates:get-settings', () => ({
-  enabled: updateChecker.isEnabled(),
-  manifestUrl: updateChecker.getManifestUrl(),
-}));
-ipcMain.handle('updates:set-settings', (_e, { enabled, manifestUrl } = {}) => {
-  if (enabled !== undefined) updateChecker.setEnabled(enabled);
-  if (manifestUrl !== undefined) updateChecker.setManifestUrl(manifestUrl);
-  return { enabled: updateChecker.isEnabled(), manifestUrl: updateChecker.getManifestUrl() };
-});
+
 ipcMain.handle('mods:uninstall', async (event, id) => {
   try {
     await modManager.uninstallMod(id, (done, total) => {

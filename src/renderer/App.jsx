@@ -48,8 +48,8 @@ function AppInner() {
   const refreshMods = async () => {
     setMods(await window.api.getInstalledMods());
     setConflicts(await window.api.getConflicts());
-    // Update badges: reads a cached version list, so this is cheap and silent.
-    // Returns nothing useful until the feature is switched on in Settings.
+    // Update badges. Uses the cached version list; the fresh fetch happens once
+    // at startup, so installing a mod does not cost another request.
     try { const r = await window.api.checkUpdates(false); setUpdates(r?.updates || {}); } catch { setUpdates({}); }
   };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
@@ -62,6 +62,14 @@ function AppInner() {
         let gp = await window.api.getGamePath(); if (!gp) gp = await window.api.detectGame(); if (gp) setGamePath(gp);
         setBepinex(await window.api.getBepInExStatus()); await refreshMods(); await refreshStaged();
       } catch (e) { console.error(e); } finally { setLoading(false); }
+
+      // Fresh update check on every launch, after the UI is up so a slow or
+      // unreachable network never delays startup. Failure is silent: the badges
+      // simply do not appear.
+      try {
+        const r = await window.api.checkUpdates(true);
+        setUpdates(r?.updates || {});
+      } catch { /* offline — keep whatever the cache gave us */ }
     })();
   }, []);
 

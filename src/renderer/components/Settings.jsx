@@ -12,12 +12,8 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
   const [healthCheck, setHealthCheck] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [dupBusy, setDupBusy] = useState(false);
-  const [upd, setUpd] = useState({ enabled: false, manifestUrl: '' });
-  const [updBusy, setUpdBusy] = useState(false);
-  const [updResult, setUpdResult] = useState(null);
-  const [regroupBusy, setRegroupBusy] = useState(false);
 
-  useEffect(() => { window.api.getUpdateSettings().then(r => r && setUpd(r)).catch(() => {}); }, []);
+  const [regroupBusy, setRegroupBusy] = useState(false);
 
   useEffect(() => {
     window.api.getDeleteAfterInstall().then(setDeleteAfterInstall).catch(e => console.error('[getDeleteAfterInstall]', e));
@@ -199,41 +195,6 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
         <Opt title={t('Open App Data Folder')} hint={t('Opens the folder where settings and mod database are stored.')} last>
           <button className="btn btn-ghost btn-sm" onClick={() => window.api.openAppDataFolder()}>{t('Open')}</button>
         </Opt>
-      </S>
-      <S title={t('Mod Updates')}>
-        <Opt title={t('Check for mod updates')}
-          hint={t('Compares your installed mods against a published version list. The manager never contacts Nexus Mods directly and no API key is needed.')}>
-          <Toggle on={upd.enabled} label={t('Check for mod updates')} onChange={async () => {
-            const r = await window.api.setUpdateSettings({ enabled: !upd.enabled });
-            setUpd(r); setUpdResult(null);
-            if (r.enabled) onRefreshMods?.();
-          }} />
-        </Opt>
-        <div style={{ paddingTop: 12 }}>
-          <label className="label" htmlFor="manifest-url">{t('Version list URL')}</label>
-          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-            <input id="manifest-url" className="input" style={{ flex: 1, fontFamily: 'var(--mono)', fontSize: 12.5 }}
-              placeholder="https://raw.githubusercontent.com/<user>/<repo>/main/versions.json"
-              value={upd.manifestUrl} onChange={e => setUpd({ ...upd, manifestUrl: e.target.value })}
-              onBlur={async () => setUpd(await window.api.setUpdateSettings({ manifestUrl: upd.manifestUrl }))} />
-            <button className="btn btn-ghost" disabled={updBusy || !upd.enabled} onClick={async () => {
-              setUpdBusy(true);
-              await window.api.setUpdateSettings({ manifestUrl: upd.manifestUrl });
-              const r = await window.api.checkUpdates(true);
-              setUpdResult(r); setUpdBusy(false);
-              onRefreshMods?.();
-            }}>
-              {updBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Check Now')}
-            </button>
-          </div>
-          {updResult && (
-            <div style={{ fontSize: 13, marginTop: 10, color: updResult.error ? 'var(--red-bright)' : 'var(--text-3)' }}>
-              {updResult.error
-                ? `${t('Check failed')}: ${updResult.error}`
-                : `${Object.keys(updResult.updates || {}).length} ${t('updates found')}`}
-            </div>
-          )}
-        </div>
       </S>
       <S title={t('Fresh Install')} danger>
         <div>

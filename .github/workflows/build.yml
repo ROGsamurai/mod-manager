@@ -49,6 +49,8 @@ jobs:
           name: linux-appimage
           path: build/*.AppImage
           if-no-files-found: error
+          compression-level: 0   # the AppImage is already compressed
+          retention-days: 3      # just long enough for the release job
 
   windows:
     name: Windows (portable)
@@ -81,6 +83,8 @@ jobs:
           name: windows-portable
           path: build/*.exe
           if-no-files-found: error
+          compression-level: 0   # the portable exe is already compressed
+          retention-days: 3
 
   release:
     name: Attach builds to release
@@ -102,3 +106,15 @@ jobs:
             artifacts/windows-portable/*.exe
           draft: true
           generate_release_notes: true
+
+      # Release assets are not Actions artifact storage, so once the builds are
+      # attached to the release the artifacts are pure overhead. On a private
+      # repo they would otherwise sit against the 500 MB allowance until their
+      # retention expires.
+      - name: Delete build artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            linux-appimage
+            windows-portable
+          failOnError: false

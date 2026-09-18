@@ -17,9 +17,18 @@ const store = new Store({ name: 'mod-manager' });
  *     fetch a static file
  *   - a failed fetch means no update badges, never a broken app
  *
- * Disabled by default and inert until a manifest URL is configured, so a build
- * that has not been set up makes no network requests at all.
+ * Runs automatically on startup. One small request to a static file on a CDN;
+ * if it fails the last good list is reused, and if there is none the app simply
+ * shows no update badges.
  */
+
+/**
+ * Where the version list lives. Built and published by
+ * https://github.com/ROGsamurai/Mod-Manager-Version-Checker — a scheduled job
+ * that calls the Nexus API once a day with the author's own key. Baked in
+ * rather than configurable: it is part of the app, not a user setting.
+ */
+const MANIFEST_URL = 'https://raw.githubusercontent.com/ROGsamurai/Mod-Manager-Version-Checker/refs/heads/main/versions.json';
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;   // re-fetch at most every 6 hours
 const FETCH_TIMEOUT_MS = 10000;
@@ -61,10 +70,7 @@ function fetchJson(url) {
 }
 
 class UpdateChecker {
-  isEnabled() { return store.get('updateCheckEnabled', false); }
-  setEnabled(v) { store.set('updateCheckEnabled', !!v); }
-  getManifestUrl() { return store.get('updateManifestUrl', ''); }
-  setManifestUrl(url) { store.set('updateManifestUrl', String(url || '').trim()); }
+  getManifestUrl() { return MANIFEST_URL; }
 
   /**
    * Flatten the manifest into "name -> latest version" entries.
@@ -104,9 +110,7 @@ class UpdateChecker {
     if (!force && cached?.data && Date.now() - (cached.fetchedAt || 0) < CACHE_TTL_MS) {
       return { data: cached.data, fetchedAt: cached.fetchedAt, cached: true };
     }
-    const url = this.getManifestUrl();
-    if (!url) throw new Error('No manifest URL configured');
-    const data = await fetchJson(url);
+    const data = await fetchJson(MANIFEST_URL);
     const fetchedAt = Date.now();
     store.set('updateCache', { fetchedAt, data });
     return { data, fetchedAt, cached: false };
@@ -118,9 +122,6 @@ class UpdateChecker {
    * the manager's own mod id, so the renderer can look up a row directly.
    */
   async check(installedMods, force = false) {
-    if (!this.isEnabled()) return { enabled: false, updates: {} };
-    if (!this.getManifestUrl()) return { enabled: true, updates: {}, error: 'not-configured' };
-
     let manifest;
     try {
       manifest = await this.getManifest(force);
@@ -128,7 +129,7 @@ class UpdateChecker {
       // Offline, blocked, or the file is not there yet: no badges, no noise.
       console.warn('[updates] manifest fetch failed:', err.message);
       const cached = store.get('updateCache', null);
-      if (!cached?.data) return { enabled: true, updates: {}, error: err.message };
+      if (!cached?.data) return { updates: {}, error: err.message };
       manifest = { data: cached.data, fetchedAt: cached.fetchedAt, cached: true };
     }
 
@@ -145,7 +146,7 @@ class UpdateChecker {
         };
       }
     }
-    return { enabled: true, checkedAt: manifest.fetchedAt, cached: manifest.cached, updates };
+    return { checkedAt: manifest.fetchedAt, cached: manifest.cached, updates };
   }
 }
 
