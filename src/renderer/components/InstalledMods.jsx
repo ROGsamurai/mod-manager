@@ -233,9 +233,9 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
           </div>
         )}
         <div style={{ width: 95 }}>{t('STATUS')}</div>
-        <div style={{ flex: 2, cursor: 'pointer' }} onClick={() => doSort('name')}>{t('NAME')}{arrow('name')}</div>
+        <div style={{ flex: 2, minWidth: 180, cursor: 'pointer' }} onClick={() => doSort('name')}>{t('NAME')}{arrow('name')}</div>
         <div style={{ width: 90, cursor: 'pointer' }} onClick={() => doSort('version')}>{t('VERSION')}{arrow('version')}</div>
-        <div style={{ width: 155, marginLeft: 28 }}>{t('UPDATE')}</div>
+        <div style={{ width: 134, marginLeft: 28 }}>{t('UPDATE')}</div>
         <div style={{ width: 60, textAlign: 'center' }}>{t('FILES')}</div>
         <div style={{ width: 60, textAlign: 'center', cursor: 'help' }} title={t('Warnings: missing dependencies or file conflicts with another mod. Hover the icon for details.')}>{t('ISSUES')}</div>
         <div style={{ width: 100, textAlign: 'center' }}>{t('ACTIONS')}</div>
@@ -379,7 +379,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
           </button>
         )}
       </div>
-      <div style={{ flex: 2, fontWeight: 500, color: 'var(--text)', minWidth: 0, paddingRight: 12 }}>
+      <div style={{ flex: 2, fontWeight: 500, color: 'var(--text)', minWidth: 180, paddingRight: 12 }}>
         {isEditingName ? (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <input className="input" value={modEditName} autoFocus
@@ -392,9 +392,13 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
-            {/* Wrap rather than collide with the version column. overflowWrap
-                handles names with no spaces to break on. */}
-            <span style={{ minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.35 }}>{translatedName}</span>
+            {/* Wrap rather than collide with the version column, but stop at two
+                lines and hide the rest — a long name should not stretch the row.
+                The full name is in the title attribute. */}
+            <span title={translatedName} style={{
+              minWidth: 0, overflowWrap: 'break-word', lineHeight: 1.35,
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>{translatedName}</span>
             {!anyToggling && h && (
               <button className="btn btn-quiet btn-sm btn-icon" onClick={onNameEditStart} title={t('Rename')} aria-label={t('Rename')}
                 style={{ width: 24, height: 24, flexShrink: 0 }}>
@@ -420,7 +424,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
           ? <span className="badge badge-accent">{mod.version}</span>
           : <span className="mono" style={{ color: 'var(--text-4)', fontSize: 12.5 }}>—</span>}
       </div>
-      <div style={{ width: 155, marginLeft: 28 }} title={mod.targetLabel}>
+      <div style={{ width: 134, marginLeft: 28 }} title={mod.targetLabel}>
         {update ? (
           <button type="button" className="pill pill-info pill-pulse"
             title={`${update.installed} → ${update.latest} · ${t('Open on Nexus Mods')}`}
