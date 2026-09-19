@@ -24,6 +24,7 @@ function AppInner() {
   const [staged, setStaged] = useState([]);
   const [conflicts, setConflicts] = useState([]);
   const [updates, setUpdates] = useState({});
+  const [latestVersions, setLatestVersions] = useState({});
   const [gamePath, setGamePath] = useState(null);
   const [bepinex, setBepinex] = useState({ installed: false });
   const [toast, setToast] = useState(null);
@@ -50,7 +51,7 @@ function AppInner() {
     setConflicts(await window.api.getConflicts());
     // Update badges. Uses the cached version list; the fresh fetch happens once
     // at startup, so installing a mod does not cost another request.
-    try { const r = await window.api.checkUpdates(false); setUpdates(r?.updates || {}); } catch { setUpdates({}); }
+    try { const r = await window.api.checkUpdates(false); setUpdates(r?.updates || {}); setLatestVersions(r?.latest || {}); } catch { setUpdates({}); setLatestVersions({}); }
   };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
 
@@ -69,6 +70,7 @@ function AppInner() {
       try {
         const r = await window.api.checkUpdates(true);
         setUpdates(r?.updates || {});
+        setLatestVersions(r?.latest || {});
       } catch { /* offline — keep whatever the cache gave us */ }
     })();
   }, []);
@@ -309,7 +311,7 @@ function AppInner() {
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-deep)'}}>
           {view==='suggested'&&<SuggestedMods mods={mods}/>}
           {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
+          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
           {view==='profiles'&&<ProfileManager notify={notify} onRefresh={refreshMods}/>}
           {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}

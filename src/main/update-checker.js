@@ -135,10 +135,15 @@ class UpdateChecker {
 
     const index = this._index(manifest.data);
     const updates = {};
+    // Published version for every tracked mod, whether or not it is newer — the
+    // Installed Mods list shows it so the column reads as "this is the newest
+    // there is" rather than going blank when you are up to date.
+    const latest = {};
     for (const mod of installedMods || []) {
       if (!mod?.version) continue;                 // nothing to compare against
       const hit = index.get(ident(mod.name));
       if (!hit) continue;                          // not tracked, or renamed by the user
+      latest[mod.id] = hit.version;
       if (this._isNewer(hit.version, mod.version)) {
         updates[mod.id] = {
           name: mod.name, installed: mod.version, latest: hit.version,
@@ -146,7 +151,7 @@ class UpdateChecker {
         };
       }
     }
-    return { checkedAt: manifest.fetchedAt, cached: manifest.cached, updates };
+    return { checkedAt: manifest.fetchedAt, cached: manifest.cached, updates, latest };
   }
 }
 
