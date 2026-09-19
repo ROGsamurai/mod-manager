@@ -342,7 +342,7 @@ ipcMain.handle('mods:list', () => modManager.getInstalledMods());
 // The app never calls the Nexus API; it reads a static version list published
 // by a scheduled job. See src/main/update-checker.js.
 ipcMain.handle('updates:check', async (_e, force) => {
-  try { return await updateChecker.check(modManager.getInstalledMods(), !!force); }
+  try { return await updateChecker.check(modManager.getInstalledMods(), !!force, app.getVersion()); }
   catch (e) { console.error('[updates:check]', e); return { enabled: false, updates: {}, error: e.message }; }
 });
 
@@ -495,7 +495,17 @@ ipcMain.handle('dialog:open-game', () => {
   return { success: false, error: 'Game path not set' };
 });
 ipcMain.handle('dialog:open-url', (_, url) => {
-  shell.openExternal(url);
+  // Only ever hand the OS an http(s) link. Some of these URLs are built from
+  // data fetched over the network (the version list), and shell.openExternal
+  // will happily launch file:, or a scheme registered by another application,
+  // if handed one.
+  let parsed;
+  try { parsed = new URL(String(url)); } catch { return { success: false, error: 'Invalid URL' }; }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    console.warn('[open-url] refused non-http scheme:', parsed.protocol);
+    return { success: false, error: 'Unsupported link type' };
+  }
+  shell.openExternal(parsed.href);
   return { success: true };
 });
 ipcMain.handle('app:get-locale', () => app.getLocale());

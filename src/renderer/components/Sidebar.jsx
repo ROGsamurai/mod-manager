@@ -44,7 +44,7 @@ const NAV = [
 const darkThemes = THEMES.filter(t => t.group === 'dark');
 const lightThemes = THEMES.filter(t => t.group === 'light');
 
-export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, onChangeTheme, bepinexReady }) {
+export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, onChangeTheme, appUpdate }) {
   const { t, locale, setLocale } = useI18n();
 
   return (
@@ -95,13 +95,26 @@ export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, o
           </select>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-          <span className="mono" style={{ fontSize: 11, color: 'var(--text-4)' }}>v{APP_VERSION}</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-4)' }}>
-            <span className={`dot ${bepinexReady ? 'dot-ok' : 'dot-bad'}`} style={{ width: 7, height: 7, boxShadow: 'none' }} />
-            {bepinexReady ? t('BepInEx ready') : t('BepInEx missing')}
-          </span>
+        {/* Same chip as a mod's version in Installed Mods, so the manager's
+            own version reads the same way as everything else. */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '0 4px' }}>
+          <span className="badge badge-accent">{APP_VERSION}</span>
         </div>
+        {/* The manager's own update state. The label says "Mod Manager"
+            explicitly so it is never mistaken for a mod update. BepInEx status
+            lives in Settings under Mod Status, where the detail is. */}
+        {appUpdate ? (
+          <button type="button" className="pill pill-info pill-pulse"
+            title={`v${appUpdate.installed} → v${appUpdate.latest} · ${t('Open on Nexus Mods')}`}
+            onClick={() => window.api.openUrl(`https://www.nexusmods.com/tcgcardshopsimulator/mods/${appUpdate.modId}`)}
+            style={{ width: '100%', justifyContent: 'center', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {t('Mod Manager Update Available')}
+          </button>
+        ) : (
+          <span className="pill" style={{ width: '100%', justifyContent: 'center', color: 'var(--text-4)' }}>
+            {t('Current Version')}
+          </span>
+        )}
       </div>
     </aside>
   );

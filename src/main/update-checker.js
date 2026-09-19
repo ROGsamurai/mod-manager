@@ -30,6 +30,10 @@ const store = new Store({ name: 'mod-manager' });
  */
 const MANIFEST_URL = 'https://raw.githubusercontent.com/ROGsamurai/Mod-Manager-Version-Checker/refs/heads/main/versions.json';
 
+/** The manager's own Nexus page. It is a mod for the game, so the same version
+ *  list that covers every other mod covers this one too. */
+const APP_MOD_ID = 974;
+
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;   // re-fetch at most every 6 hours
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_BYTES = 2 * 1024 * 1024;         // a version list should be a few KB
@@ -81,22 +85,40 @@ class UpdateChecker {
    */
   _index(manifest) {
     const byName = new Map();
+    const ambiguous = new Set();
     for (const [modId, mod] of Object.entries(manifest?.mods || {})) {
       const add = (name, version) => {
         const key = ident(name);
         if (!key || !version) return;
+        const existing = byName.get(key);
+        // The same name genuinely belongs to two different mods on Nexus
+        // ("LadyLuck" is both mod 142 and mod 939). There is no way to tell
+        // which one is installed, and guessing would send someone to the wrong
+        // mod page, so neither gets a badge.
+        if (existing && existing.modId !== Number(modId)) ambiguous.add(key);
         byName.set(key, { name, version: String(version), modId: Number(modId), modName: mod.name || name });
       };
       add(mod.name, mod.version);
       for (const f of mod.files || []) add(f.name, f.version);
     }
+    for (const key of ambiguous) byName.delete(key);
+    if (ambiguous.size) console.log(`[updates] ${ambiguous.size} ambiguous mod name(s) skipped`);
     return byName;
   }
 
-  /** Newest-first comparison, same rules as the staging list uses. */
+  /**
+   * Newest-first comparison.
+   *
+   * Authors write versions freely: "v1.2", "1.0.0.3", "Beta 2", and at least
+   * one mod publishes "v0.4.0" in the version field itself. Pull the numeric
+   * groups out rather than trusting the string to be dotted digits, and refuse
+   * to judge when either side has no numbers at all — a wrong badge is worse
+   * than a missing one.
+   */
   _isNewer(latest, installed) {
-    const pa = String(latest).split('.').map(n => parseInt(n, 10) || 0);
-    const pb = String(installed).split('.').map(n => parseInt(n, 10) || 0);
+    const parts = v => (String(v).match(/\d+/g) || []).map(Number);
+    const pa = parts(latest), pb = parts(installed);
+    if (!pa.length || !pb.length) return false;
     for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
       const a = pa[i] || 0, b = pb[i] || 0;
       if (a > b) return true;
@@ -121,7 +143,7 @@ class UpdateChecker {
    * Returns { enabled, checkedAt, error, updates: { [modId]: {...} } } keyed by
    * the manager's own mod id, so the renderer can look up a row directly.
    */
-  async check(installedMods, force = false) {
+  async check(installedMods, force = false, appVersion = null) {
     let manifest;
     try {
       manifest = await this.getManifest(force);
@@ -151,7 +173,16 @@ class UpdateChecker {
         };
       }
     }
-    return { checkedAt: manifest.fetchedAt, cached: manifest.cached, updates, latest };
+    // The manager itself: same comparison, reported separately so the UI can
+    // say "Mod Manager Update Available" rather than leaving the user guessing
+    // which mod the badge refers to.
+    let app = null;
+    const appEntry = manifest.data?.mods?.[APP_MOD_ID];
+    if (appVersion && appEntry?.version && this._isNewer(appEntry.version, appVersion)) {
+      app = { installed: appVersion, latest: String(appEntry.version), modId: APP_MOD_ID, name: appEntry.name };
+    }
+
+    return { checkedAt: manifest.fetchedAt, cached: manifest.cached, updates, latest, app };
   }
 }
 

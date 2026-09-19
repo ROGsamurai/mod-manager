@@ -204,26 +204,46 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" /></svg>
                     )}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 600, fontSize: 16, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ flex: 1, minWidth: 200, paddingRight: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {/* Wraps to a second line rather than being cut to a few
+                          characters; the chips keep their own size. */}
+                      <span title={tMod(names[f.filename] || f.parsedName || '', '').name}
+                        style={{ fontWeight: 600, fontSize: 16, color: 'var(--text)', minWidth: 0,
+                          overflowWrap: 'break-word', lineHeight: 1.3,
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {tMod(names[f.filename] || f.parsedName || '', '').name}
                       </span>
-                      {f.parsedVersion && <span className="badge badge-accent">{f.parsedVersion}</span>}
-                      {f.status === 'update' && <span className="pill pill-info pill-pulse">{t('Update Ready')}</span>}
-                      {blockedMap[f.filename] && <span className="pill pill-danger">{t('Blocked')}</span>}
+                      {f.parsedVersion && <span className="badge badge-accent" style={{ flexShrink: 0 }}>{f.parsedVersion}</span>}
+                      {f.status === 'update' && <span className="pill pill-info pill-pulse" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('Update Ready')}</span>}
+                      {blockedMap[f.filename] && <span className="pill pill-danger" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{t('Blocked')}</span>}
                     </div>
                     {/* Filename on its own line — it is long enough to fill the
                         row by itself — with size and version notes underneath. */}
-                    <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 4 }}>
+                    <div className="mono truncate" title={f.filename} style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 4 }}>
                       {f.filename}
                     </div>
-                    <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }}>
-                      {f.statError
-                        ? <span style={{ color: 'var(--red-bright)' }} title={`The manager can list this file but cannot read it (${f.statError}). It is usually locked by OneDrive/antivirus, still downloading, or on a path Windows considers too long. This also prevents deleting and installing it.`}>{t('unreadable')} ({f.statError})</span>
-                        : fmt(f.size)}
-                      {f.status === 'update' && <span style={{ color: 'var(--accent)', marginLeft: 8 }}>{t('updates')} v{f.installedVersion}</span>}
-                      {f.olderVersions?.length > 0 && <span style={{ color: 'var(--text-3)', marginLeft: 8 }}>v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}</span>}
+                    {/* Size and version notes as chips rather than a run-on line,
+                        matching how status reads everywhere else. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                      {f.statError ? (
+                        <span className="pill pill-danger" style={{ whiteSpace: 'nowrap' }}
+                          title={`The manager can list this file but cannot read it (${f.statError}). It is usually locked by OneDrive/antivirus, still downloading, or on a path Windows considers too long. This also prevents deleting and installing it.`}>
+                          {t('unreadable')} ({f.statError})
+                        </span>
+                      ) : (
+                        <span className="pill mono" style={{ whiteSpace: 'nowrap' }}>{fmt(f.size)}</span>
+                      )}
+                      {f.status === 'update' && (
+                        <span className="pill pill-accent" style={{ whiteSpace: 'nowrap' }}>
+                          {t('updates')} v{f.installedVersion}
+                        </span>
+                      )}
+                      {f.olderVersions?.length > 0 && (
+                        <span className="pill" style={{ whiteSpace: 'nowrap' }}>
+                          v{f.olderVersions.map(o => o.version).join(', v')} {t('also staged')}
+                        </span>
+                      )}
                     </div>
                     {/* Blocked notice lives under the mod name, not in the
                         destination column: the reason is a sentence, and putting a
@@ -241,14 +261,14 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                       this is a label, not a control. Users picking the wrong target
                       was a common cause of "installed fine but does nothing". */}
                   {!blockedMap[f.filename] && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0, width: 160 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0, width: 160, minWidth: 160 }}>
                       <div className="label">{t('Installs To')}</div>
-                      <div className="mono" style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
+                      <div className="mono truncate" style={{ fontSize: 12.5, color: 'var(--text-3)' }}>
                         {targetLabel(sels[f.filename])}
                       </div>
                     </div>
                   )}
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {securityMap[f.filename] && (
                       <span className={`pill ${securityMap[f.filename].blocked.length > 0 ? 'pill-danger' : securityMap[f.filename].warnings.length > 0 ? 'pill-accent' : 'pill-success'}`}
                         title={securityMap[f.filename].blocked.length > 0 ? securityMap[f.filename].blocked[0] : securityMap[f.filename].warnings.length > 0 ? securityMap[f.filename].warnings[0] : securityMap[f.filename].verified ? t('Verified Safe') : t('Safe')}
