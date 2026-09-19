@@ -28,7 +28,24 @@ const store = new Store({ name: 'mod-manager' });
  * that calls the Nexus API once a day with the author's own key. Baked in
  * rather than configurable: it is part of the app, not a user setting.
  */
-const MANIFEST_URL = 'https://raw.githubusercontent.com/ROGsamurai/Mod-Manager-Version-Checker/refs/heads/main/versions.json';
+/**
+ * Tried in order, first success wins.
+ *
+ * jsDelivr is first for policy reasons as much as speed. GitHub rate-limits
+ * unauthenticated downloads from raw.githubusercontent.com per public IP, so a
+ * user behind a shared address can be handed a 429 because of other people's
+ * traffic, and sustained pulls from raw are the pattern GitHub treats as using
+ * a repository as a CDN. jsDelivr's acceptable use policy explicitly allows
+ * this: free for personal and commercial use, with no limits on bandwidth or
+ * request count.
+ *
+ * raw stays as the fallback, where it is used rarely enough to never approach
+ * either limit, and covers a jsDelivr outage or a stale twelve-hour cache.
+ */
+const MANIFEST_URLS = [
+  'https://cdn.jsdelivr.net/gh/ROGsamurai/Mod-Manager-Version-Checker@main/versions.json',
+  'https://raw.githubusercontent.com/ROGsamurai/Mod-Manager-Version-Checker/refs/heads/main/versions.json',
+];
 
 /** The manager's own Nexus page. It is a mod for the game, so the same version
  *  list that covers every other mod covers this one too. */
@@ -74,7 +91,7 @@ function fetchJson(url) {
 }
 
 class UpdateChecker {
-  getManifestUrl() { return MANIFEST_URL; }
+  getManifestUrl() { return MANIFEST_URLS[0]; }
 
   /**
    * Flatten the manifest into "name -> latest version" entries.
@@ -132,7 +149,15 @@ class UpdateChecker {
     if (!force && cached?.data && Date.now() - (cached.fetchedAt || 0) < CACHE_TTL_MS) {
       return { data: cached.data, fetchedAt: cached.fetchedAt, cached: true };
     }
-    const data = await fetchJson(MANIFEST_URL);
+    let data, lastErr;
+    for (const url of MANIFEST_URLS) {
+      try { data = await fetchJson(url); break; }
+      catch (err) {
+        lastErr = err;
+        console.warn(`[updates] ${new URL(url).hostname} failed: ${err.message}`);
+      }
+    }
+    if (!data) throw lastErr || new Error('No manifest source reachable');
     const fetchedAt = Date.now();
     store.set('updateCache', { fetchedAt, data });
     return { data, fetchedAt, cached: false };
