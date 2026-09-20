@@ -47,10 +47,23 @@ jobs:
         # Windows stays pinned to 24.13.3 below: that pin is about the portable
         # .exe stub and antivirus false positives, which has nothing to do with
         # the Linux target.
-        # toolsets is passed here rather than in package.json: electron-builder
-        # rejects config keys it does not recognise, and the 24.13.3 pinned for
-        # the Windows build predates this option.
-        run: npx electron-builder@26.16.1 --linux --publish never --config.toolsets.appimage=1.0.3
+        # The Linux build uses a config generated from package.json with the
+        # Windows section stripped out. v26 removed win.publisherName, so it
+        # rejects the shared config outright — and the Windows block is pinned to
+        # 24.13.3 for the portable stub, so it must not be changed to suit v26.
+        # Generating keeps one source of truth instead of a second config file
+        # that would drift.
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const cfg = { ...pkg.build };
+            delete cfg.win;
+            delete cfg.portable;
+            cfg.toolsets = { appimage: '1.0.3' };   // static FUSE3 runtime
+            require('fs').writeFileSync('electron-builder.linux.json', JSON.stringify(cfg, null, 2));
+            console.log('linux config:', Object.keys(cfg).join(', '));
+          "
+          npx electron-builder@26.16.1 --linux --publish never -c electron-builder.linux.json
         env:
           # electron-builder tries to reach GitHub for update metadata otherwise
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
