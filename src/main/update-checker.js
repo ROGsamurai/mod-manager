@@ -209,6 +209,25 @@ class UpdateChecker {
 
     return { checkedAt: manifest.fetchedAt, cached: manifest.cached, updates, latest, app };
   }
+  /**
+   * The published name for a mod, from whatever list is already cached.
+   *
+   * Used to name an installed mod the way Nexus does rather than however its
+   * archive happened to be called. Cache-only and synchronous: installing must
+   * never wait on the network, and if nothing is cached the caller keeps the
+   * name it parsed.
+   */
+  canonicalName(name) {
+    if (!name) return null;
+    const cached = store.get('updateCache', null);
+    if (!cached?.data) return null;
+    if (!this._nameIndex || this._nameIndexFor !== cached.fetchedAt) {
+      this._nameIndex = this._index(cached.data);
+      this._nameIndexFor = cached.fetchedAt;
+    }
+    const hit = this._nameIndex.get(ident(name));
+    return hit ? hit.name : null;
+  }
 }
 
 module.exports = new UpdateChecker();

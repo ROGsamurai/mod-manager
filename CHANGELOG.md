@@ -1,5 +1,6 @@
 Version 2.0.0
 NEW
+- The Linux AppImage no longer needs libfuse2. It is built with the static AppImage runtime, which talks to /dev/fuse directly, so it launches on distributions that ship only FUSE3 — Arch, Fedora, Ubuntu 24.04 and newer — without installing a compatibility package
 - A completely refreshed interface. The manager now uses a deeper, cooler background with a single card per mod instead of boxed table rows, softer corners, and far more breathing room. Status is shown as tinted pills — update available, blocked, verified — rather than solid colour blocks, and every emoji icon has been replaced with a crisp drawn icon that follows the theme
 - The sidebar carries the app name and a status light, shows the active section with an accent bar, and keeps language, theme and version in a quiet footer
 - Install progress now sits inside the mod's own card with its own phase label, so "Removing old version" and "Installing" are distinguishable at a glance

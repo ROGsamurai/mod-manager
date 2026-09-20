@@ -1379,7 +1379,7 @@ class ModManager {
         size,
         mtime,
         statError,
-        parsedName: parsed.name,
+        parsedName: this._canonicalName(parsed.name),
         parsedVersion: parsed.version,
         base: this._baseName(parsed.name),
       });
@@ -1508,6 +1508,25 @@ class ModManager {
         .trim();
     } while (out !== prev && out.length > 0);
     return out || base;
+  }
+
+  /**
+   * The name Nexus actually gives this file, when the published list knows it.
+   *
+   * Archive filenames are not authoritative — a re-upload, a manual rename or
+   * one of the two Nexus naming formats can all produce a different string for
+   * the same mod. Using the published name means what the manager displays, what
+   * it stores, and what the update check compares are the same text.
+   *
+   * Falls back to the parsed name whenever the list has no opinion, so this can
+   * never block an install.
+   */
+  _canonicalName(name) {
+    try {
+      return require('./update-checker').canonicalName(name) || name;
+    } catch {
+      return name;   // checker unavailable (tests, partial builds)
+    }
   }
 
   _parseNexusFilename(filename) {
@@ -2490,7 +2509,10 @@ class ModManager {
     if (targetKey && !TARGETS[targetKey]) throw new Error(`Invalid target: ${targetKey}`);
 
     const parsed = this._parseNexusFilename(filename);
-    const name = modName || parsed.name;
+    // An explicit name from the caller wins; otherwise prefer the published
+    // name over whatever the archive filename parsed to.
+    const parsedName = modName || parsed.name;
+    const name = modName || this._canonicalName(parsed.name);
     const version = parsed.version || '';
     // Remember the source archive's modified time so a later, newer archive of
     // the same mod (even with the same/no version) is recognized as an update
@@ -2608,12 +2630,16 @@ class ModManager {
     // so user settings and files dropped into a mod folder by hand survive.
     // It also clears any leftover disabled-mods copy, which the old path
     // orphaned on disk.
+    // Match an existing install under EITHER spelling. A mod installed before
+    // the published list was available carries its parsed name, so comparing
+    // only the canonical one would install a second copy alongside it.
     const baseKey = this._baseName(name);
+    const parsedKey = this._baseName(parsedName);
     let removedOldFiles = 0;
     let previousWasUntracked = false;
     for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
-      if (m.filename === filename || mBase === baseKey) {
+      if (m.filename === filename || mBase === baseKey || mBase === parsedKey) {
         try {
           // Report as its own phase so the UI can show "Removing old version"
           // instead of a progress bar that just says "Installing" throughout —

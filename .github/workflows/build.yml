@@ -38,7 +38,19 @@ jobs:
         run: npm run build:renderer
 
       - name: Build AppImage
-        run: npx electron-builder --linux --publish never
+        # electron-builder 26 for Linux specifically: it understands
+        # toolsets.appimage, which swaps the 2019 FUSE2 runtime for the static
+        # type2-runtime. The old one dlopens libfuse.so.2 at startup, so the
+        # AppImage refused to launch on anything that ships only FUSE3 — Arch,
+        # Fedora, Ubuntu 24.04 and up.
+        #
+        # Windows stays pinned to 24.13.3 below: that pin is about the portable
+        # .exe stub and antivirus false positives, which has nothing to do with
+        # the Linux target.
+        # toolsets is passed here rather than in package.json: electron-builder
+        # rejects config keys it does not recognise, and the 24.13.3 pinned for
+        # the Windows build predates this option.
+        run: npx electron-builder@26.16.1 --linux --publish never --config.toolsets.appimage=1.0.3
         env:
           # electron-builder tries to reach GitHub for update metadata otherwise
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
