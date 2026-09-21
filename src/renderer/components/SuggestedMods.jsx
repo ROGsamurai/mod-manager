@@ -84,19 +84,18 @@ const BUNDLES = [
 ];
 
 /**
- * Author-sanctioned mods that are no longer on Nexus, grouped under their
- * author. `drive` is the Google Drive file id; the manager downloads it
+ * Author-sanctioned mods shared with permission, grouped under their author. `drive` is the Google Drive file id; the manager downloads it
  * straight into staging rather than sending the user to a web page.
  */
 const EXTRA_SECTIONS = [
   {
     title: "Bliss's Sport Cards",
-    note: 'Removed from Nexus; shared here with the author\'s permission.',
+    note: 'Shared with the author\'s permission.',
     bundles: [
       {
         id: 'bliss-sports',
         name: 'Sports Card Collections',
-        blurb: 'NFL, NHL, NBA, MLB, and UFC, Boxing & WWE card collections from Bliss\'s sport card series, plus the mods they need.',
+        blurb: 'NFL, NHL, NBA, MLB, Racing, Soccer, and UFC, Boxing & WWE card collections from Bliss\'s sport card series, with accessories and the mods they need.',
         mods: [
           // `saveAs` gives each archive a versioned name, so the manager can
           // show its version and recognise a later re-upload as an update.
@@ -119,6 +118,18 @@ const EXTRA_SECTIONS = [
           { name: 'MLB Collection', role: 'pack', drive: '1RxLm2blalCb21mtK88vc1UFoiB38m2Pq',
             saveAs: 'MLB Collection v1.0.zip',
             driveView: 'https://drive.google.com/file/d/1RxLm2blalCb21mtK88vc1UFoiB38m2Pq/view',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'Racing Collection', role: 'pack', drive: '1WW1W5N5XkfOpbHOK-yVMaHgD1zJPtPjX',
+            saveAs: 'Racing Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1WW1W5N5XkfOpbHOK-yVMaHgD1zJPtPjX/view',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'Soccer Collection', role: 'pack', drive: '1GTL7q46_azhNXFSEPp9pHlvXZFIc4gu0',
+            saveAs: 'Soccer Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1GTL7q46_azhNXFSEPp9pHlvXZFIc4gu0/view',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'Misc & Accessories', role: 'pack', drive: '1fbn7DLEFt_MekWW8hsDKI0wkWSTZlqay',
+            saveAs: 'Misc & Accessories v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1fbn7DLEFt_MekWW8hsDKI0wkWSTZlqay/view',
             note: 'Downloads straight into Staged Mods.' },
 
           { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
@@ -165,9 +176,12 @@ export default function SuggestedMods({ mods = [], staged = [], notify }) {
   // Everything currently in the staging folder, including older versions that
   // are grouped under a newer row. A collection counts as downloaded when its
   // saved name is there.
+  const stem = n => String(n || '').toLowerCase().replace(/\.(zip|rar|7z)$/i, '');
   const stagedNames = new Set(staged.flatMap(f => [f.filename, ...(f.olderVersions || []).map(o => o.filename)])
-    .filter(Boolean).map(n => n.toLowerCase()));
-  const isStaged = m => !!m.saveAs && stagedNames.has(m.saveAs.toLowerCase());
+    .filter(Boolean).map(stem));
+  // Compared without the extension: the downloader names the file after its
+  // real format, so a collection listed as .zip may land as .rar.
+  const isStaged = m => !!m.saveAs && stagedNames.has(stem(m.saveAs));
 
   const fmtSize = bytes => bytes >= 1073741824
     ? `${(bytes / 1073741824).toFixed(2)} GB`
@@ -320,7 +334,7 @@ export default function SuggestedMods({ mods = [], staged = [], notify }) {
           {BUNDLES.map(renderBundle)}
         </div>
 
-        {/* Author sections: mods removed from Nexus, shared with permission. */}
+        {/* Author sections: mods shared with the author's permission. */}
         {EXTRA_SECTIONS.map(sec => (
           <div key={sec.title} style={{ marginTop: 28 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px 2px' }}>

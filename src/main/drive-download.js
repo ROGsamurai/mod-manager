@@ -151,12 +151,18 @@ async function downloadDriveFile(fileId, stagingDir, names = {}, onProgress) {
   }
   // The name on disk is now ours, so prove the contents really are an archive.
   // This also catches a Drive file that was swapped for something else.
-  if (!archiveKind(partPath)) {
+  const kind = archiveKind(partPath);
+  if (!kind) {
     try { fs.unlinkSync(partPath); } catch {}
     throw Object.assign(new Error('The downloaded file is not a valid archive'), { code: 'type' });
   }
-  fs.renameSync(partPath, finalPath);
-  return { filename: name, bytes };
+  // Name the file after what it actually IS. Extraction picks its method from
+  // the extension, so a RAR saved as ".zip" would reach the zip extractor and
+  // fail to install. saveAs chooses the name; the contents choose the extension.
+  const realName = name.replace(/\.(zip|rar|7z)$/i, `.${kind}`);
+  const realPath = path.join(stagingDir, realName);
+  fs.renameSync(partPath, realPath);
+  return { filename: realName, bytes, format: kind };
 }
 
 /**
