@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
 /**
@@ -83,6 +83,54 @@ const BUNDLES = [
   },
 ];
 
+/**
+ * Author-sanctioned mods that are no longer on Nexus, grouped under their
+ * author. `drive` is the Google Drive file id; the manager downloads it
+ * straight into staging rather than sending the user to a web page.
+ */
+const EXTRA_SECTIONS = [
+  {
+    title: "Bliss's Sport Cards",
+    note: 'Removed from Nexus; shared here with the author\'s permission.',
+    bundles: [
+      {
+        id: 'bliss-sports',
+        name: 'Sports Card Collections',
+        blurb: 'NFL, NHL, NBA, MLB, and UFC, Boxing & WWE card collections from Bliss\'s sport card series, plus the mods they need.',
+        mods: [
+          // `saveAs` gives each archive a versioned name, so the manager can
+          // show its version and recognise a later re-upload as an update.
+          { name: 'NFL Collection', role: 'pack', drive: '1Wopop8uTlE2hvXiaAfMttB726zblsaDL',
+            saveAs: 'NFL Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1Wopop8uTlE2hvXiaAfMttB726zblsaDL/view?usp=sharing',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'NHL Collection', role: 'pack', drive: '1ymzWJ4LqDQordaz5FMmUSyd5oazKzNit',
+            saveAs: 'NHL Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1ymzWJ4LqDQordaz5FMmUSyd5oazKzNit/view',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'UFC, Boxing & WWE Collection', role: 'pack', drive: '17oO0pG8SMiOxPFz39jNyTjgh9a214V4I',
+            saveAs: 'UFC, Boxing & WWE Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/17oO0pG8SMiOxPFz39jNyTjgh9a214V4I/view',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'NBA Collection', role: 'pack', drive: '1Hx7DpCyy3qRgAlDr7EE8OewdL6F5-vcz',
+            saveAs: 'NBA Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1Hx7DpCyy3qRgAlDr7EE8OewdL6F5-vcz/view',
+            note: 'Downloads straight into Staged Mods.' },
+          { name: 'MLB Collection', role: 'pack', drive: '1RxLm2blalCb21mtK88vc1UFoiB38m2Pq',
+            saveAs: 'MLB Collection v1.0.zip',
+            driveView: 'https://drive.google.com/file/d/1RxLm2blalCb21mtK88vc1UFoiB38m2Pq/view',
+            note: 'Downloads straight into Staged Mods.' },
+
+          { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
+          { name: 'Phone - Overhaul', role: 'required', id: 685 },
+          { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
+          { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
+        ],
+      },
+    ],
+  },
+];
+
 const nexusUrl = id => `https://www.nexusmods.com/tcgcardshopsimulator/mods/${id}`;
 
 /**
@@ -93,10 +141,59 @@ const nexusUrl = id => `https://www.nexusmods.com/tcgcardshopsimulator/mods/${id
  */
 const ident = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-export default function SuggestedMods({ mods = [] }) {
+export default function SuggestedMods({ mods = [], staged = [], notify }) {
   const { t } = useI18n();
   // Closed by default: this is reference material, not the first thing to read.
   const [open, setOpen] = useState(null);
+  // Per-file download state: { [driveId]: { pct } } while running.
+  const [downloading, setDownloading] = useState({});
+  // { [driveId]: bytes } — looked up from Google so the pill is always current.
+  const [sizes, setSizes] = useState({});
+
+  useEffect(() => {
+    let alive = true;
+    const ids = [...BUNDLES, ...EXTRA_SECTIONS.flatMap(sec => sec.bundles)]
+      .flatMap(b => b.mods).filter(m => m.drive).map(m => m.drive);
+    for (const id of ids) {
+      window.api.driveFileSize?.(id).then(r => {
+        if (alive && r?.success && r.bytes) setSizes(prev => ({ ...prev, [id]: r.bytes }));
+      }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, []);
+
+  // Everything currently in the staging folder, including older versions that
+  // are grouped under a newer row. A collection counts as downloaded when its
+  // saved name is there.
+  const stagedNames = new Set(staged.flatMap(f => [f.filename, ...(f.olderVersions || []).map(o => o.filename)])
+    .filter(Boolean).map(n => n.toLowerCase()));
+  const isStaged = m => !!m.saveAs && stagedNames.has(m.saveAs.toLowerCase());
+
+  const fmtSize = bytes => bytes >= 1073741824
+    ? `${(bytes / 1073741824).toFixed(2)} GB`
+    : `${Math.max(1, Math.round(bytes / 1048576))} MB`;
+
+  useEffect(() => window.api.onDownloadProgress?.(({ fileId, done, total }) => {
+    setDownloading(prev => prev[fileId]
+      ? { ...prev, [fileId]: { pct: total ? Math.round(done / total * 100) : null, mb: (done / 1048576).toFixed(0) } }
+      : prev);
+  }), []);
+
+  const downloadDrive = async m => {
+    setDownloading(prev => ({ ...prev, [m.drive]: { pct: 0, mb: '0' } }));
+    const r = await window.api.downloadDrive(m.drive, { saveAs: m.saveAs, fallbackName: `${m.name}.zip` });
+    setDownloading(prev => { const n = { ...prev }; delete n[m.drive]; return n; });
+    if (r?.success) {
+      notify?.(`${m.name} — ${t('downloaded to Staged Mods')}`, 'success');
+    } else if (r?.code === 'html') {
+      // Google sent a page instead of the file: the daily download quota is
+      // used up, or sharing was changed. Show the user Google's own message.
+      notify?.(t('Google Drive did not release the file. Opening it in your browser.'), 'warn');
+      window.api.openUrl(m.driveView);
+    } else {
+      notify?.(`${t('Download failed')}: ${r?.error || ''}`, 'error');
+    }
+  };
 
   const installedNames = new Set(mods.map(m => ident(m.name)));
   const isInstalled = name => installedNames.has(ident(name));
@@ -112,20 +209,11 @@ export default function SuggestedMods({ mods = [] }) {
   // just a tinted rectangle.
   const rolePill = { pack: 'pill pill-info', required: 'pill pill-accent', recommended: 'pill' };
 
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '24px 24px 18px', flexShrink: 0 }}>
-        <h1 className="page-title">{t('Getting Started')}</h1>
-        <p className="page-sub">{t('Pick a pack and get everything it needs. Each mod opens on Nexus Mods in your browser.')}</p>
-      </div>
-
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 24px' }}>
-
-        {/* Bundles */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {BUNDLES.map(b => {
+  const renderBundle = b => {
             const expanded = open === b.id;
-            const mainCount = b.mods.reduce((n, m) => n + (m.files ? m.files.length : 0), 0);
+            // A pack either lists its files (the Pokemon pack's eight) or is one
+            // archive itself (each sports collection).
+            const mainCount = b.mods.reduce((n, m) => n + (m.files ? m.files.length : (m.role === 'pack' ? 1 : 0)), 0);
             const requiredCount = b.mods.filter(m => m.role === 'required').length;
             const recommendedCount = b.mods.filter(m => m.role === 'recommended').length;
             const installedCount = countInstalled(b);
@@ -147,7 +235,7 @@ export default function SuggestedMods({ mods = [] }) {
                       {/* Same colour coding as the rows below: the pack is blue,
                           required amber, recommended plain, installed green. */}
                       {mainCount > 0 && <span className="pill pill-info">{mainCount} {t('Main')}</span>}
-                      <span className="pill pill-accent">{requiredCount} {t('Required')}</span>
+                      {requiredCount > 0 && <span className="pill pill-accent">{requiredCount} {t('Required')}</span>}
                       {recommendedCount > 0 && <span className="pill">{recommendedCount} {t('Recommended')}</span>}
                       <span className={`pill ${installedCount > 0 ? 'pill-success' : ''}`}>
                         {installedCount} {t('Installed')}
@@ -181,21 +269,70 @@ export default function SuggestedMods({ mods = [] }) {
                               ))}
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600 }}>{m.name}</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 14.5, fontWeight: 600 }}>{m.name}</span>
+                            {m.drive && sizes[m.drive] && <span className="pill mono">{fmtSize(sizes[m.drive])}</span>}
+                          </span>
                           {m.note && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-3)', marginTop: 2 }}>{m.note}</span>}
                         </span>
-                        <button className="btn btn-accent btn-sm" style={{ flexShrink: 0 }}
-                          onClick={() => window.api.openUrl(nexusUrl(m.id))}>
-                          {t('Get Mod')}
-                        </button>
+                        {m.drive && isStaged(m) && !downloading[m.drive] ? (
+                          // Already in the staging folder: downloading again would
+                          // only produce a duplicate copy.
+                          <button className="btn btn-ghost btn-sm" disabled style={{ flexShrink: 0, minWidth: 96, cursor: 'default' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
+                            {t('Downloaded')}
+                          </button>
+                        ) : m.drive ? (
+                          <button className="btn btn-accent btn-sm" style={{ flexShrink: 0, minWidth: 96 }}
+                            disabled={!!downloading[m.drive]} onClick={() => downloadDrive(m)}>
+                            {downloading[m.drive] ? (
+                              <>
+                                <span className="spinner" style={{ width: 12, height: 12 }} />
+                                {downloading[m.drive].pct != null ? `${downloading[m.drive].pct}%` : `${downloading[m.drive].mb} MB`}
+                              </>
+                            ) : t('Download')}
+                          </button>
+                        ) : (
+                          <button className="btn btn-accent btn-sm" style={{ flexShrink: 0 }}
+                            onClick={() => window.api.openUrl(nexusUrl(m.id))}>
+                            {t('Get Mod')}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             );
-          })}
+  };
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '24px 24px 18px', flexShrink: 0 }}>
+        <h1 className="page-title">{t('Getting Started')}</h1>
+        <p className="page-sub">{t('Pick a pack and get everything it needs. Each mod opens on Nexus Mods in your browser.')}</p>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 24px' }}>
+
+        {/* Bundles */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {BUNDLES.map(renderBundle)}
         </div>
+
+        {/* Author sections: mods removed from Nexus, shared with permission. */}
+        {EXTRA_SECTIONS.map(sec => (
+          <div key={sec.title} style={{ marginTop: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px 2px' }}>
+              <h2 style={{ fontSize: 17, fontWeight: 700 }}>{sec.title}</h2>
+              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            </div>
+            {sec.note && <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px 2px' }}>{t(sec.note)}</p>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {sec.bundles.map(renderBundle)}
+            </div>
+          </div>
+        ))}
 
       </div>
 

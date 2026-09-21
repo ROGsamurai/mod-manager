@@ -23,9 +23,6 @@ function AppInner() {
   const [mods, setMods] = useState([]);
   const [staged, setStaged] = useState([]);
   const [conflicts, setConflicts] = useState([]);
-  const [updates, setUpdates] = useState({});
-  const [latestVersions, setLatestVersions] = useState({});
-  const [appUpdate, setAppUpdate] = useState(null);
   const [gamePath, setGamePath] = useState(null);
   const [bepinex, setBepinex] = useState({ installed: false });
   const [toast, setToast] = useState(null);
@@ -50,9 +47,6 @@ function AppInner() {
   const refreshMods = async () => {
     setMods(await window.api.getInstalledMods());
     setConflicts(await window.api.getConflicts());
-    // Update badges. Uses the cached version list; the fresh fetch happens once
-    // at startup, so installing a mod does not cost another request.
-    try { const r = await window.api.checkUpdates(false); setUpdates(r?.updates || {}); setLatestVersions(r?.latest || {}); setAppUpdate(r?.app || null); } catch { setUpdates({}); setLatestVersions({}); }
   };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
 
@@ -64,16 +58,6 @@ function AppInner() {
         let gp = await window.api.getGamePath(); if (!gp) gp = await window.api.detectGame(); if (gp) setGamePath(gp);
         setBepinex(await window.api.getBepInExStatus()); await refreshMods(); await refreshStaged();
       } catch (e) { console.error(e); } finally { setLoading(false); }
-
-      // Fresh update check on every launch, after the UI is up so a slow or
-      // unreachable network never delays startup. Failure is silent: the badges
-      // simply do not appear.
-      try {
-        const r = await window.api.checkUpdates(true);
-        setUpdates(r?.updates || {});
-        setLatestVersions(r?.latest || {});
-        setAppUpdate(r?.app || null);
-      } catch { /* offline — keep whatever the cache gave us */ }
     })();
   }, []);
 
@@ -280,7 +264,7 @@ function AppInner() {
       )}
 
       <div style={{display:'flex',flex:1,minHeight:0}}>
-        <Sidebar view={view} onNav={setView} modCount={mods.length} stagedCount={staged.length} themeId={themeId} onChangeTheme={changeTheme} appUpdate={appUpdate} />
+        <Sidebar view={view} onNav={setView} modCount={mods.length} stagedCount={staged.length} themeId={themeId} onChangeTheme={changeTheme} />
         <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
       {/* Title bar. The heavy accent underline is gone — the header now reads as
           part of the app chrome, with state shown as pills rather than solid
@@ -311,11 +295,11 @@ function AppInner() {
       </header>
 
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-deep)'}}>
-          {view==='suggested'&&<SuggestedMods mods={mods}/>}
+          {view==='suggested'&&<SuggestedMods mods={mods} staged={staged} notify={notify}/>}
           {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
+          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
-          {view==='profiles'&&<ProfileManager notify={notify} onRefresh={refreshMods}/>}
+          {view==='profiles'&&<ProfileManager mods={mods} notify={notify} onRefresh={refreshMods}/>}
           {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
             notify={notify} onRefreshMods={refreshMods} onRefreshStaged={refreshStaged}
             onSetBepinex={async()=>setBepinex(await window.api.getBepInExStatus())}

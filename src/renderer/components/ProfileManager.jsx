@@ -1,13 +1,42 @@
 import { useState, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
-export default function ProfileManager({ notify, onRefresh }) {
+export default function ProfileManager({ notify, onRefresh, mods = [] }) {
   const { t } = useI18n();
   const [profiles, setProfiles] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const [activateProgress, setActivateProgress] = useState(null);
+  const [editing, setEditing] = useState(null);      // profile id whose mods are open
+  const [picked, setPicked] = useState(new Set());   // working set while editing
+  const [saving, setSaving] = useState(false);
+
+  // A profile is the set of mods that should be ON. Older profiles stored a
+  // snapshot of every mod's state instead, so read either shape.
+  const enabledIdsOf = p => Array.isArray(p.enabledIds)
+    ? p.enabledIds
+    : (p.mods || []).filter(m => m.enabled).map(m => m.id);
+
+  const startEdit = p => { setEditing(p.id); setPicked(new Set(enabledIdsOf(p))); };
+  const togglePick = id => setPicked(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const saveMods = async id => {
+    setSaving(true);
+    const r = await window.api.setProfileMods(id, [...picked]);
+    setSaving(false);
+    if (!r?.success) { notify(r?.error || t('Could not save'), 'error'); return; }
+    setEditing(null);
+    await load();
+    // Editing the profile that is currently in use has to take effect now.
+    // Saving alone only rewrites the list, so a mod removed from an active
+    // profile would stay enabled until it was activated again.
+    if (id === activeId) await activate(id);
+    else notify(t('Profile updated'), 'success');
+  };
 
   useEffect(() => {
     if (!window.api.onProfileProgress) return;
@@ -25,8 +54,11 @@ export default function ProfileManager({ notify, onRefresh }) {
 
   const create = async () => {
     if (!newName.trim()) return;
-    await window.api.createProfile(newName.trim());
+    const created = await window.api.createProfile(newName.trim());
     setNewName(''); await load();
+    // A new profile is empty by design, so go straight to choosing its mods
+    // rather than leaving something that would disable everything.
+    if (created?.id) { setEditing(created.id); setPicked(new Set()); }
     notify(`${newName.trim()} saved`, 'success');
   };
   const activate = async id => {
@@ -75,12 +107,13 @@ export default function ProfileManager({ notify, onRefresh }) {
             const isActive = p.id === activeId;
             return (
               <div key={p.id} style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: 16,
                 background: isActive ? 'var(--green-soft)' : 'var(--bg-surface)',
-                borderRadius: 'var(--radius)',
-                border: isActive ? '1px solid var(--green)' : '1px solid var(--border)',
+                borderRadius: 'var(--radius-lg)',
+                border: isActive ? '1px solid var(--green-border)' : '1px solid var(--border)',
+                overflow: 'hidden',
               }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 16 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ fontSize: 16, fontWeight: 600 }}>{p.name}</div>
                     {isActive && (
@@ -92,11 +125,20 @@ export default function ProfileManager({ notify, onRefresh }) {
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 2 }}>{p.mods?.length || 0} {t('mods')} · {new Date(p.createdAt).toLocaleDateString()}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-4)', marginTop: 2 }}>
+                    {enabledIdsOf(p).length} {t('of')} {mods.length} {t('mods enabled')} · {new Date(p.createdAt).toLocaleDateString()}
+                  </div>
                 </div>
                 {isActive ? (
-                  <button className="btn btn-ghost btn-sm" disabled style={{ opacity: .6, cursor: 'default' }}>
-                    {t('Activated')}
+                  <button className="btn btn-ghost btn-sm" onClick={() => activate(p.id)} disabled={busy}
+                    title={t('Apply this profile again')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 96, justifyContent: 'center' }}>
+                    {busy && activateProgress ? (
+                      <>
+                        <span className="spinner" style={{ width: 11, height: 11 }} />
+                        {activateProgress.total > 0 ? `${activateProgress.current}/${activateProgress.total}` : '…'}
+                      </>
+                    ) : busy ? '…' : t('Re-apply')}
                   </button>
                 ) : (
                   <button className="btn btn-accent btn-sm" onClick={() => activate(p.id)} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 96, justifyContent: 'center' }}>
@@ -108,8 +150,56 @@ export default function ProfileManager({ notify, onRefresh }) {
                     ) : busy ? '…' : `${t('Activate')}`}
                   </button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={() => doExport(p.id)} title={t('Export')} disabled={busy}>📤</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => editing === p.id ? setEditing(null) : startEdit(p)} disabled={busy}>
+                  {editing === p.id ? t('Close') : t('Edit Mods')}
+                </button>
+                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => doExport(p.id)} title={t('Export')} aria-label={t('Export')} disabled={busy}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="M7 8l5-5 5 5" /><path d="M4 17v3h16v-3" /></svg>
+                </button>
                 <button className="btn btn-danger btn-sm" onClick={() => remove(p.id, p.name)} disabled={busy}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /></svg></button>
+              </div>
+
+              {/* Membership editor. Ticking a mod means "this profile turns it
+                  on"; everything unticked is turned off when the profile is
+                  activated, including mods installed after it was created. */}
+              {editing === p.id && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <span className="label">{t('Mods in this profile')}</span>
+                    <span className="pill">{picked.size} {t('of')} {mods.length}</span>
+                    <div style={{ flex: 1 }} />
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPicked(new Set(mods.map(m => m.id)))}>{t('All')}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setPicked(new Set())}>{t('None')}</button>
+                    <button className="btn btn-accent btn-sm" onClick={() => saveMods(p.id)} disabled={saving}>
+                      {saving && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Save')}
+                    </button>
+                  </div>
+
+                  <div style={{ maxHeight: 320, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--bg-deep)' }}>
+                    {mods.length === 0 && (
+                      <div style={{ padding: 16, fontSize: 13, color: 'var(--text-4)' }}>{t('No mods installed')}</div>
+                    )}
+                    {mods.map(m => (
+                      <label key={m.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                        borderBottom: '1px solid var(--border)', cursor: 'pointer',
+                      }}>
+                        <input type="checkbox" checked={picked.has(m.id)}
+                          onChange={() => togglePick(m.id)} style={{ width: 15, height: 15, accentColor: 'var(--accent)' }} />
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{m.name}</span>
+                        {m.core && <span className="pill pill-accent">{t('Core')}</span>}
+                        {m.version && <span className="badge">{m.version}</span>}
+                      </label>
+                    ))}
+                  </div>
+                  {mods.some(m => m.core && !picked.has(m.id)) && (
+                    <div style={{ fontSize: 12.5, color: 'var(--accent)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
+                      {t('This profile turns off a core mod. Without BepInEx the game loads no mods at all.')}
+                    </div>
+                  )}
+                </div>
+              )}
               </div>
             );
           })}

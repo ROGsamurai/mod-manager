@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('profiles:activate-progress', handler);
   },
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
+  setProfileMods: (id, enabledIds) => ipcRenderer.invoke('profiles:set-mods', id, enabledIds),
+  renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', id, name),
   exportProfile: (id) => ipcRenderer.invoke('profiles:export', id),
   importProfile: () => ipcRenderer.invoke('profiles:import'),
   getConfigFiles: () => ipcRenderer.invoke('config:list'),
@@ -73,7 +75,13 @@ contextBridge.exposeInMainWorld('api', {
   openSavesFolder: () => ipcRenderer.invoke('dialog:open-saves'),
   openGameFolder: () => ipcRenderer.invoke('dialog:open-game'),
   openUrl: (url) => ipcRenderer.invoke('dialog:open-url', url),
-  checkUpdates: (force) => ipcRenderer.invoke('updates:check', force),
+  downloadDrive: (fileId, names) => ipcRenderer.invoke('downloads:drive', fileId, names),
+  driveFileSize: (fileId) => ipcRenderer.invoke('downloads:drive-size', fileId),
+  onDownloadProgress: (cb) => {
+    const handler = (_, d) => { try { cb(d); } catch (e) { console.error('[downloads:progress]', e); } };
+    ipcRenderer.on('downloads:progress', handler);
+    return () => ipcRenderer.removeListener('downloads:progress', handler);
+  },
   getLocale: () => ipcRenderer.invoke('app:get-locale'),
   onStagingChanged: (cb) => {
     ipcRenderer.removeAllListeners('staging:changed');

@@ -53,7 +53,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
 
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
-      <div style={{ padding: 24, maxWidth: 1180, margin: '0 auto' }}>
+      <div style={{ padding: 24 }}>
       <h1 className="page-title">{t('Settings')}</h1>
       <p className="page-sub" style={{ marginBottom: 20 }}>{t('Game folder, mod status and maintenance.')}</p>
       {/* Two fixed columns rather than CSS columns. With `columns` the browser
@@ -61,7 +61,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
           Mod Management panel into the other column. Panels now stay where they
           are whatever their content does, and the grid falls back to a single
           column when the window is too narrow for two. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(430px, 1fr))', gap: 18, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))', gap: 18, alignItems: 'start' }}>
         <div>
       <S title={t('Game Location')}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
-export default function InstalledMods({ mods, conflicts, updates = {}, latestVersions = {}, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
+export default function InstalledMods({ mods, conflicts, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
   const { t, tMod } = useI18n();
   const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState('All');
@@ -164,7 +164,7 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
   };
 
   const rowProps = (m, i) => ({
-    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id], update: updates[m.id], latest: latestVersions[m.id],
+    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id],
     onToggle: () => onToggle(m.id), onRemove: () => onRemove(m.id), onMarkCore: c => onMarkCore(m.id, c),
     selected: selected.has(m.id), onSelect: () => toggleSelect(m.id), t, tMod,
     busy: togglingId === m.id,
@@ -235,7 +235,6 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
         <div style={{ width: 95 }}>{t('STATUS')}</div>
         <div style={{ flex: 2, minWidth: 180, cursor: 'pointer' }} onClick={() => doSort('name')}>{t('NAME')}{arrow('name')}</div>
         <div style={{ width: 90, cursor: 'pointer' }} onClick={() => doSort('version')}>{t('VERSION')}{arrow('version')}</div>
-        <div style={{ width: 134, marginLeft: 28 }}>{t('UPDATE')}</div>
         <div style={{ width: 60, textAlign: 'center' }}>{t('FILES')}</div>
         <div style={{ width: 60, textAlign: 'center', cursor: 'help' }} title={t('Warnings: missing dependencies or file conflicts with another mod. Hover the icon for details.')}>{t('ISSUES')}</div>
         <div style={{ width: 100, textAlign: 'center' }}>{t('ACTIONS')}</div>
@@ -333,7 +332,7 @@ function FL({ label, children, style }) {
   </div>;
 }
 
-function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
+function Row({ mod, i, conflict, conflictInfo, missingDeps, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
   const [h, setH] = useState(false);
   const isCore = mod.core;
   const isPrefab = isCore && mod.files?.some(f => f.toLowerCase().includes('_prefabloader'));
@@ -362,10 +361,21 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
       )}
       <div style={{ width: 95 }}>
         {isCore ? (
-          <span className="pill pill-accent" style={{ height: 28, padding: '0 11px' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-            {isPrefab ? t('Prefab') : t('Core')}
-          </span>
+          // A core mod can be switched off by a profile. The locked pill used to
+          // look identical either way, so an off core mod was indistinguishable
+          // from an on one without unlocking it first. Off gets its own state.
+          mod.enabled === false ? (
+            <span className="pill pill-danger" style={{ height: 28, padding: '0 11px' }}
+              title={t('Core mod, turned off by a profile')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+              {t('Off')}
+            </span>
+          ) : (
+            <span className="pill pill-accent" style={{ height: 28, padding: '0 11px' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+              {isPrefab ? t('Prefab') : t('Core')}
+            </span>
+          )
         ) : busy ? (
           <div title={t('Working…')} className="pill" style={{ height: 28, padding: '0 11px', cursor: 'default' }}>
             <span className="spinner" style={{ width: 11, height: 11 }} />
@@ -373,7 +383,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
           </div>
         ) : (
           <button type="button" onClick={anyToggling ? undefined : onToggle} disabled={anyToggling}
-            className={`pill ${mod.enabled ? 'pill-success' : ''}`} style={{ height: 28, padding: '0 12px', cursor: anyToggling ? 'default' : 'pointer' }}>
+            className={`pill ${mod.enabled ? 'pill-success' : 'pill-danger'}`} style={{ height: 28, padding: '0 12px', cursor: anyToggling ? 'default' : 'pointer' }}>
             {mod.enabled && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>}
             {mod.enabled ? t('On') : t('Off')}
           </button>
@@ -423,21 +433,6 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
         {mod.version
           ? <span className="badge badge-accent">{mod.version}</span>
           : <span className="mono" style={{ color: 'var(--text-4)', fontSize: 12.5 }}>—</span>}
-      </div>
-      <div style={{ width: 134, marginLeft: 28 }} title={mod.targetLabel}>
-        {update ? (
-          <button type="button" className="pill pill-info pill-pulse"
-            title={`${update.installed} → ${update.latest} · ${t('Open on Nexus Mods')}`}
-            onClick={e => { e.stopPropagation(); window.api.openUrl(`https://www.nexusmods.com/tcgcardshopsimulator/mods/${update.modId}`); }}
-            style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {t('Update Available')}
-          </button>
-        ) : (
-          <span className="pill" style={{ color: 'var(--text-4)' }}
-            title={latest ? `${t('Latest')}: ${latest}` : undefined}>
-            {t('None')}
-          </span>
-        )}
       </div>
       <div className="mono" style={{ width: 60, textAlign: 'center', color: 'var(--text-4)', fontSize: 12 }}>{mod.fileCount || '—'}</div>
       <div style={{ width: 60, textAlign: 'center' }}>

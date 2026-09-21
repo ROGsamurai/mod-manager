@@ -10,7 +10,7 @@ if (!gotLock) { process.exit(0); }
 const chokidar = require('chokidar');
 const Store = require('electron-store');
 const store = new Store({ name: 'mod-manager' });
-const updateChecker = require('./update-checker');
+const { downloadDriveFile, driveFileSize } = require('./drive-download');
 const modManager = require('./mod-manager');
 const gameDetector = require('./game-detector');
 
@@ -338,12 +338,34 @@ ipcMain.handle('mods:install', async (_, filename, targetKey, modName, skipRemov
 });
 ipcMain.handle('mods:list', () => modManager.getInstalledMods());
 
-// ── Mod update checking ─────────────────────────────────────────────────────
-// The app never calls the Nexus API; it reads a static version list published
-// by a scheduled job. See src/main/update-checker.js.
-ipcMain.handle('updates:check', async (_e, force) => {
-  try { return await updateChecker.check(modManager.getInstalledMods(), !!force, app.getVersion()); }
-  catch (e) { console.error('[updates:check]', e); return { enabled: false, updates: {}, error: e.message }; }
+// ── Direct downloads from Google Drive into staging ─────────────────────────
+// Used by Getting Started for author-sanctioned mods that are no longer on
+// Nexus. The file lands in staging and then goes through the normal pipeline:
+// the watcher picks it up, and the security scan runs before any install.
+// Sizes shown before download. Cached for the session: a size lookup is a
+// network round trip, and Getting Started re-renders often.
+const driveSizeCache = new Map();
+ipcMain.handle('downloads:drive-size', async (_e, fileId) => {
+  if (driveSizeCache.has(fileId)) return { success: true, bytes: driveSizeCache.get(fileId) };
+  try {
+    const bytes = await driveFileSize(fileId);
+    if (bytes) driveSizeCache.set(fileId, bytes);
+    return { success: !!bytes, bytes };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+ipcMain.handle('downloads:drive', async (event, fileId, names) => {
+  try {
+    const r = await downloadDriveFile(fileId, modManager.getStagingPath(), names, (done, total) => {
+      try { event.sender.send('downloads:progress', { fileId, done, total }); } catch {}
+    });
+    try { modManager.pruneStagingVersions(); } catch {}
+    return { success: true, ...r };
+  } catch (e) {
+    console.warn('[downloads:drive]', e.message);
+    return { success: false, error: e.message, code: e.code || 'error' };
+  }
 });
 
 ipcMain.handle('mods:uninstall', async (event, id) => {
@@ -403,6 +425,14 @@ ipcMain.handle('profiles:activate', async (event, id) => {
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('profiles:delete', (_, id) => { modManager.deleteProfile(id); return { success: true }; });
+ipcMain.handle('profiles:set-mods', (_, profileId, enabledIds) => {
+  try { return { success: true, profile: modManager.setProfileMods(profileId, enabledIds) }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('profiles:rename', (_, profileId, name) => {
+  try { return { success: true, profile: modManager.renameProfile(profileId, name) }; }
+  catch (e) { return { success: false, error: e.message }; }
+});
 
 // Profile Export/Import
 ipcMain.handle('profiles:export', async (_, id) => {

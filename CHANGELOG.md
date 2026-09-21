@@ -1,5 +1,12 @@
+Version 2.0.1
+REMOVED
+- Mod update checking has been removed. It relied on a version list compiled from Nexus Mods, and Nexus Mods have confirmed that republishing their data this way is not permitted. The manager no longer fetches, stores or displays any data that came from Nexus Mods. The Installed Mods column that showed update status is back to showing each mod's install target
+
 Version 2.0.0
 NEW
+- Getting Started has a new Bliss's Sport Cards section for mods that were removed from Nexus and are shared with the author's permission. Its Sports Card Collections panel lists the NFL, NHL, NBA, MLB, and UFC, Boxing & WWE collections alongside the four mods they need, each with its download size. Each collection downloads straight into Staged Mods with a progress counter, saved under a versioned name so it shows a version and can be recognised when updated, and its button changes to Downloaded while the file is in the staging folder so it cannot be fetched twice. If Google Drive's daily download limit has been reached, the manager says so and opens the file's Drive page instead
+- Disabled mods now show a red Off pill, matching the red locked Off shown for a core mod switched off by a profile
+- Profiles now hold a list of the mods they turn on, and you choose that list yourself. A new profile starts empty; open it, tick exactly the mods it should enable, and save. Activating it enables those and disables everything else, including mods installed after the profile was created and including core mods. Previously a profile silently captured whatever happened to be enabled at the moment it was made, and ignored anything installed later
 - The Linux AppImage no longer needs libfuse2. It is built with the static AppImage runtime, which talks to /dev/fuse directly, so it launches on distributions that ship only FUSE3 — Arch, Fedora, Ubuntu 24.04 and newer — without installing a compatibility package
 - A completely refreshed interface. The manager now uses a deeper, cooler background with a single card per mod instead of boxed table rows, softer corners, and far more breathing room. Status is shown as tinted pills — update available, blocked, verified — rather than solid colour blocks, and every emoji icon has been replaced with a crisp drawn icon that follows the theme
 - The sidebar carries the app name and a status light, shows the active section with an accent bar, and keeps language, theme and version in a quiet footer

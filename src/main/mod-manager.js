@@ -1379,7 +1379,7 @@ class ModManager {
         size,
         mtime,
         statError,
-        parsedName: this._canonicalName(parsed.name),
+        parsedName: parsed.name,
         parsedVersion: parsed.version,
         base: this._baseName(parsed.name),
       });
@@ -1508,25 +1508,6 @@ class ModManager {
         .trim();
     } while (out !== prev && out.length > 0);
     return out || base;
-  }
-
-  /**
-   * The name Nexus actually gives this file, when the published list knows it.
-   *
-   * Archive filenames are not authoritative — a re-upload, a manual rename or
-   * one of the two Nexus naming formats can all produce a different string for
-   * the same mod. Using the published name means what the manager displays, what
-   * it stores, and what the update check compares are the same text.
-   *
-   * Falls back to the parsed name whenever the list has no opinion, so this can
-   * never block an install.
-   */
-  _canonicalName(name) {
-    try {
-      return require('./update-checker').canonicalName(name) || name;
-    } catch {
-      return name;   // checker unavailable (tests, partial builds)
-    }
   }
 
   _parseNexusFilename(filename) {
@@ -2509,10 +2490,8 @@ class ModManager {
     if (targetKey && !TARGETS[targetKey]) throw new Error(`Invalid target: ${targetKey}`);
 
     const parsed = this._parseNexusFilename(filename);
-    // An explicit name from the caller wins; otherwise prefer the published
-    // name over whatever the archive filename parsed to.
     const parsedName = modName || parsed.name;
-    const name = modName || this._canonicalName(parsed.name);
+    const name = parsedName;
     const version = parsed.version || '';
     // Remember the source archive's modified time so a later, newer archive of
     // the same mod (even with the same/no version) is recognized as an update
@@ -3634,10 +3613,17 @@ class ModManager {
     return { success: true, removed, tracked: Array.isArray(mod.files) ? mod.files.length : 0 };
   }
 
-  async toggleMod(modId, onProgress) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.allowCore] Permit toggling a mod marked as core.
+   *   The lock exists to stop someone disabling BepInEx by accident from the
+   *   mod list; a profile that deliberately excludes it is not an accident, so
+   *   profile activation passes this.
+   */
+  async toggleMod(modId, onProgress, opts = {}) {
     const mod = this.mods.get(modId);
     if (!mod) throw new Error(`Mod not found: ${modId}`);
-    if (mod.core) throw new Error(`"${mod.name}" is a core mod and cannot be disabled.`);
+    if (mod.core && !opts.allowCore) throw new Error(`"${mod.name}" is a core mod and cannot be disabled.`);
 
     // Progress reporting: large mods (e.g. Pokemon Expansions ~906 files) take a
     // noticeable moment to move every file. Emit (done, total) so the UI can show
@@ -3837,20 +3823,71 @@ class ModManager {
 
   getProfiles() { return store.get('profiles', []); }
   getActiveProfileId() { return store.get('activeProfileId', null); }
-  createProfile(name) {
+  /**
+   * A profile is the SET OF MODS THAT SHOULD BE ON.
+   *
+   * It used to be a snapshot of every mod's state at the moment it was created,
+   * which had two problems: a mod installed later was absent from the snapshot
+   * and therefore ignored on activation (so it stayed on when it should have
+   * gone off), and there was no way to change what a profile contained short of
+   * deleting and recreating it.
+   *
+   * Storing membership instead means activation is a straight answer for every
+   * installed mod — in the list, on; not in the list, off — and the membership
+   * can be edited afterwards the way groups can.
+   */
+  createProfile(name, enabledIds = null) {
     const profiles = this.getProfiles();
-    const p = { id: `profile_${Date.now()}`, name, createdAt: new Date().toISOString(), mods: Array.from(this.mods.values()).map(m => ({ id: m.id, enabled: m.enabled })) };
+    // No snapshot of "whatever happens to be on right now": a profile starts
+    // empty and the user picks what belongs in it. Guessing produced profiles
+    // nobody had actually chosen the contents of.
+    const ids = (enabledIds || []).filter(id => this.mods.has(id));
+    const p = {
+      id: `profile_${Date.now()}`, name, createdAt: new Date().toISOString(),
+      enabledIds: ids,
+      // Kept so an older build reading the same store still sees something sane.
+      mods: Array.from(this.mods.values()).map(m => ({ id: m.id, enabled: ids.includes(m.id) })),
+    };
     profiles.push(p); store.set('profiles', profiles); return p;
   }
+
+  /** Which mods a profile turns on. Handles profiles saved by older builds. */
+  getProfileEnabledIds(profile) {
+    if (Array.isArray(profile?.enabledIds)) return profile.enabledIds;
+    return (profile?.mods || []).filter(m => m.enabled).map(m => m.id);
+  }
+
+  /** Replace a profile's membership. */
+  setProfileMods(profileId, enabledIds) {
+    const profiles = this.getProfiles();
+    const p = profiles.find(x => x.id === profileId);
+    if (!p) throw new Error('Profile not found');
+    p.enabledIds = (enabledIds || []).filter(id => this.mods.has(id));
+    p.mods = Array.from(this.mods.values()).map(m => ({ id: m.id, enabled: p.enabledIds.includes(m.id) }));
+    store.set('profiles', profiles);
+    return p;
+  }
+
+  renameProfile(profileId, name) {
+    const profiles = this.getProfiles();
+    const p = profiles.find(x => x.id === profileId);
+    if (!p) throw new Error('Profile not found');
+    p.name = String(name || '').trim() || p.name;
+    store.set('profiles', profiles);
+    return p;
+  }
+
   async activateProfile(profileId, onProgress) {
     const profile = this.getProfiles().find(p => p.id === profileId);
     if (!profile) throw new Error('Profile not found');
-    const states = new Map(profile.mods.map(m => [m.id, m.enabled]));
-    // Determine which mods actually need to flip, so progress reflects real work.
+    const wanted = new Set(this.getProfileEnabledIds(profile));
+    // Every installed mod gets an answer, including ones installed after the
+    // profile was made, and including core mods — a profile says exactly what
+    // should be on.
     const toFlip = [];
     for (const [id, mod] of this.mods) {
-      const s = states.get(id);
-      if (s !== undefined && mod.enabled !== s) toFlip.push(id);
+      const shouldBeOn = wanted.has(id);
+      if (mod.enabled !== shouldBeOn) toFlip.push(id);
     }
     let i = 0;
     for (const id of toFlip) {
@@ -3860,7 +3897,7 @@ class ModManager {
       // Forward each mod's file-move progress too (same shape toggleMod emits).
       await this.toggleMod(id, (done, fileTotal) => {
         if (onProgress) { try { onProgress({ current: i, total: toFlip.length, modName: mod ? mod.name : '', modId: id, fileDone: done, fileTotal }); } catch {} }
-      });
+      }, { allowCore: true });
     }
     store.set('activeProfileId', profileId);
     return profile;
