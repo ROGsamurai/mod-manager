@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useI18n } from '../i18n';
 
 /**
@@ -83,65 +83,6 @@ const BUNDLES = [
   },
 ];
 
-/**
- * Author-sanctioned mods shared with permission, grouped under their author. `drive` is the Google Drive file id; the manager downloads it
- * straight into staging rather than sending the user to a web page.
- */
-const EXTRA_SECTIONS = [
-  {
-    title: "Bliss's Sport Cards",
-    note: 'Shared with the author\'s permission.',
-    bundles: [
-      {
-        id: 'bliss-sports',
-        name: 'Sports Card Collections',
-        blurb: 'NFL, NHL, NBA, MLB, Racing, Soccer, and UFC, Boxing & WWE card collections from Bliss\'s sport card series, with accessories and the mods they need.',
-        mods: [
-          // `saveAs` gives each archive a versioned name, so the manager can
-          // show its version and recognise a later re-upload as an update.
-          { name: 'NFL Collection', role: 'pack', drive: '1Wopop8uTlE2hvXiaAfMttB726zblsaDL',
-            saveAs: 'NFL Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1Wopop8uTlE2hvXiaAfMttB726zblsaDL/view?usp=sharing',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'NHL Collection', role: 'pack', drive: '1ymzWJ4LqDQordaz5FMmUSyd5oazKzNit',
-            saveAs: 'NHL Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1ymzWJ4LqDQordaz5FMmUSyd5oazKzNit/view',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'UFC, Boxing & WWE Collection', role: 'pack', drive: '17oO0pG8SMiOxPFz39jNyTjgh9a214V4I',
-            saveAs: 'UFC, Boxing & WWE Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/17oO0pG8SMiOxPFz39jNyTjgh9a214V4I/view',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'NBA Collection', role: 'pack', drive: '1Hx7DpCyy3qRgAlDr7EE8OewdL6F5-vcz',
-            saveAs: 'NBA Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1Hx7DpCyy3qRgAlDr7EE8OewdL6F5-vcz/view',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'MLB Collection', role: 'pack', drive: '1RxLm2blalCb21mtK88vc1UFoiB38m2Pq',
-            saveAs: 'MLB Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1RxLm2blalCb21mtK88vc1UFoiB38m2Pq/view',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'Racing Collection', role: 'pack', drive: '1WW1W5N5XkfOpbHOK-yVMaHgD1zJPtPjX',
-            saveAs: 'Racing Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1WW1W5N5XkfOpbHOK-yVMaHgD1zJPtPjX/view',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'Soccer Collection', role: 'pack', drive: '1GTL7q46_azhNXFSEPp9pHlvXZFIc4gu0',
-            saveAs: 'Soccer Collection v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1GTL7q46_azhNXFSEPp9pHlvXZFIc4gu0/view',
-            note: 'Downloads straight into Staged Mods.' },
-          { name: 'Misc & Accessories', role: 'pack', drive: '1fbn7DLEFt_MekWW8hsDKI0wkWSTZlqay',
-            saveAs: 'Misc & Accessories v1.0.zip',
-            driveView: 'https://drive.google.com/file/d/1fbn7DLEFt_MekWW8hsDKI0wkWSTZlqay/view',
-            note: 'Downloads straight into Staged Mods.' },
-
-          { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
-          { name: 'Phone - Overhaul', role: 'required', id: 685 },
-          { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
-          { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
-        ],
-      },
-    ],
-  },
-];
-
 const nexusUrl = id => `https://www.nexusmods.com/tcgcardshopsimulator/mods/${id}`;
 
 /**
@@ -152,62 +93,10 @@ const nexusUrl = id => `https://www.nexusmods.com/tcgcardshopsimulator/mods/${id
  */
 const ident = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-export default function SuggestedMods({ mods = [], staged = [], notify }) {
+export default function SuggestedMods({ mods = [] }) {
   const { t } = useI18n();
   // Closed by default: this is reference material, not the first thing to read.
   const [open, setOpen] = useState(null);
-  // Per-file download state: { [driveId]: { pct } } while running.
-  const [downloading, setDownloading] = useState({});
-  // { [driveId]: bytes } — looked up from Google so the pill is always current.
-  const [sizes, setSizes] = useState({});
-
-  useEffect(() => {
-    let alive = true;
-    const ids = [...BUNDLES, ...EXTRA_SECTIONS.flatMap(sec => sec.bundles)]
-      .flatMap(b => b.mods).filter(m => m.drive).map(m => m.drive);
-    for (const id of ids) {
-      window.api.driveFileSize?.(id).then(r => {
-        if (alive && r?.success && r.bytes) setSizes(prev => ({ ...prev, [id]: r.bytes }));
-      }).catch(() => {});
-    }
-    return () => { alive = false; };
-  }, []);
-
-  // Everything currently in the staging folder, including older versions that
-  // are grouped under a newer row. A collection counts as downloaded when its
-  // saved name is there.
-  const stem = n => String(n || '').toLowerCase().replace(/\.(zip|rar|7z)$/i, '');
-  const stagedNames = new Set(staged.flatMap(f => [f.filename, ...(f.olderVersions || []).map(o => o.filename)])
-    .filter(Boolean).map(stem));
-  // Compared without the extension: the downloader names the file after its
-  // real format, so a collection listed as .zip may land as .rar.
-  const isStaged = m => !!m.saveAs && stagedNames.has(stem(m.saveAs));
-
-  const fmtSize = bytes => bytes >= 1073741824
-    ? `${(bytes / 1073741824).toFixed(2)} GB`
-    : `${Math.max(1, Math.round(bytes / 1048576))} MB`;
-
-  useEffect(() => window.api.onDownloadProgress?.(({ fileId, done, total }) => {
-    setDownloading(prev => prev[fileId]
-      ? { ...prev, [fileId]: { pct: total ? Math.round(done / total * 100) : null, mb: (done / 1048576).toFixed(0) } }
-      : prev);
-  }), []);
-
-  const downloadDrive = async m => {
-    setDownloading(prev => ({ ...prev, [m.drive]: { pct: 0, mb: '0' } }));
-    const r = await window.api.downloadDrive(m.drive, { saveAs: m.saveAs, fallbackName: `${m.name}.zip` });
-    setDownloading(prev => { const n = { ...prev }; delete n[m.drive]; return n; });
-    if (r?.success) {
-      notify?.(`${m.name} — ${t('downloaded to Staged Mods')}`, 'success');
-    } else if (r?.code === 'html') {
-      // Google sent a page instead of the file: the daily download quota is
-      // used up, or sharing was changed. Show the user Google's own message.
-      notify?.(t('Google Drive did not release the file. Opening it in your browser.'), 'warn');
-      window.api.openUrl(m.driveView);
-    } else {
-      notify?.(`${t('Download failed')}: ${r?.error || ''}`, 'error');
-    }
-  };
 
   const installedNames = new Set(mods.map(m => ident(m.name)));
   const isInstalled = name => installedNames.has(ident(name));
@@ -283,35 +172,13 @@ export default function SuggestedMods({ mods = [], staged = [], notify }) {
                               ))}
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 14.5, fontWeight: 600 }}>{m.name}</span>
-                            {m.drive && sizes[m.drive] && <span className="pill mono">{fmtSize(sizes[m.drive])}</span>}
-                          </span>
+                          <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600 }}>{m.name}</span>
                           {m.note && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-3)', marginTop: 2 }}>{m.note}</span>}
                         </span>
-                        {m.drive && isStaged(m) && !downloading[m.drive] ? (
-                          // Already in the staging folder: downloading again would
-                          // only produce a duplicate copy.
-                          <button className="btn btn-ghost btn-sm" disabled style={{ flexShrink: 0, minWidth: 96, cursor: 'default' }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>
-                            {t('Downloaded')}
-                          </button>
-                        ) : m.drive ? (
-                          <button className="btn btn-accent btn-sm" style={{ flexShrink: 0, minWidth: 96 }}
-                            disabled={!!downloading[m.drive]} onClick={() => downloadDrive(m)}>
-                            {downloading[m.drive] ? (
-                              <>
-                                <span className="spinner" style={{ width: 12, height: 12 }} />
-                                {downloading[m.drive].pct != null ? `${downloading[m.drive].pct}%` : `${downloading[m.drive].mb} MB`}
-                              </>
-                            ) : t('Download')}
-                          </button>
-                        ) : (
-                          <button className="btn btn-accent btn-sm" style={{ flexShrink: 0 }}
-                            onClick={() => window.api.openUrl(nexusUrl(m.id))}>
-                            {t('Get Mod')}
-                          </button>
-                        )}
+                        <button className="btn btn-accent btn-sm" style={{ flexShrink: 0 }}
+                          onClick={() => window.api.openUrl(nexusUrl(m.id))}>
+                          {t('Get Mod')}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -334,19 +201,6 @@ export default function SuggestedMods({ mods = [], staged = [], notify }) {
           {BUNDLES.map(renderBundle)}
         </div>
 
-        {/* Author sections: mods shared with the author's permission. */}
-        {EXTRA_SECTIONS.map(sec => (
-          <div key={sec.title} style={{ marginTop: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px 2px' }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700 }}>{sec.title}</h2>
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            </div>
-            {sec.note && <p style={{ fontSize: 12.5, color: 'var(--text-4)', margin: '0 0 12px 2px' }}>{t(sec.note)}</p>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {sec.bundles.map(renderBundle)}
-            </div>
-          </div>
-        ))}
 
       </div>
 

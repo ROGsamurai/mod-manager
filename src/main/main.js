@@ -10,7 +10,6 @@ if (!gotLock) { process.exit(0); }
 const chokidar = require('chokidar');
 const Store = require('electron-store');
 const store = new Store({ name: 'mod-manager' });
-const { downloadDriveFile, driveFileSize } = require('./drive-download');
 const modManager = require('./mod-manager');
 const gameDetector = require('./game-detector');
 
@@ -337,36 +336,6 @@ ipcMain.handle('mods:install', async (_, filename, targetKey, modName, skipRemov
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:list', () => modManager.getInstalledMods());
-
-// ── Direct downloads from Google Drive into staging ─────────────────────────
-// Used by Getting Started for author-sanctioned mods that are no longer on
-// Nexus. The file lands in staging and then goes through the normal pipeline:
-// the watcher picks it up, and the security scan runs before any install.
-// Sizes shown before download. Cached for the session: a size lookup is a
-// network round trip, and Getting Started re-renders often.
-const driveSizeCache = new Map();
-ipcMain.handle('downloads:drive-size', async (_e, fileId) => {
-  if (driveSizeCache.has(fileId)) return { success: true, bytes: driveSizeCache.get(fileId) };
-  try {
-    const bytes = await driveFileSize(fileId);
-    if (bytes) driveSizeCache.set(fileId, bytes);
-    return { success: !!bytes, bytes };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-ipcMain.handle('downloads:drive', async (event, fileId, names) => {
-  try {
-    const r = await downloadDriveFile(fileId, modManager.getStagingPath(), names, (done, total) => {
-      try { event.sender.send('downloads:progress', { fileId, done, total }); } catch {}
-    });
-    try { modManager.pruneStagingVersions(); } catch {}
-    return { success: true, ...r };
-  } catch (e) {
-    console.warn('[downloads:drive]', e.message);
-    return { success: false, error: e.message, code: e.code || 'error' };
-  }
-});
 
 ipcMain.handle('mods:uninstall', async (event, id) => {
   try {

@@ -75,13 +75,6 @@ contextBridge.exposeInMainWorld('api', {
   openSavesFolder: () => ipcRenderer.invoke('dialog:open-saves'),
   openGameFolder: () => ipcRenderer.invoke('dialog:open-game'),
   openUrl: (url) => ipcRenderer.invoke('dialog:open-url', url),
-  downloadDrive: (fileId, names) => ipcRenderer.invoke('downloads:drive', fileId, names),
-  driveFileSize: (fileId) => ipcRenderer.invoke('downloads:drive-size', fileId),
-  onDownloadProgress: (cb) => {
-    const handler = (_, d) => { try { cb(d); } catch (e) { console.error('[downloads:progress]', e); } };
-    ipcRenderer.on('downloads:progress', handler);
-    return () => ipcRenderer.removeListener('downloads:progress', handler);
-  },
   getLocale: () => ipcRenderer.invoke('app:get-locale'),
   onStagingChanged: (cb) => {
     ipcRenderer.removeAllListeners('staging:changed');
