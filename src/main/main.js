@@ -11,6 +11,7 @@ const chokidar = require('chokidar');
 const Store = require('electron-store');
 const store = new Store({ name: 'mod-manager' });
 const modManager = require('./mod-manager');
+const updateCheck = require('./update-check');
 const gameDetector = require('./game-detector');
 
 // Safety net: log uncaught exceptions and unhandled rejections instead of crashing.
@@ -179,16 +180,18 @@ function watchStaging() {
   // Wrap notify so a per-file error (EPERM on OneDrive online-only files, AV lock,
   // mid-sync placeholders) can't propagate out of chokidar and crash the main
   // process with "A JavaScript error occurred in the main process".
-  const notify = () => {
+  const notify = async () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
       // Files can arrive in the staging folder without going through the app —
       // dragged in from Explorer, restored from a backup, copied off a USB
       // stick. Normalise them here too, so a hand-added "Mod (1).zip" never
       // shows up as a phantom Update or Downgrade of the mod it is a copy of.
-      try { modManager.pruneStagingVersions(); } catch (err) {
+      // Awaited: pruning recycles files, and the list must reflect the result.
+      try { await modManager.pruneStagingVersions(); } catch (err) {
         console.warn('[staging watcher] prune failed:', err.message);
       }
+      if (!mainWindow || mainWindow.isDestroyed()) return;
       mainWindow.webContents.send('staging:changed', modManager.getStagedFiles());
     } catch (err) {
       console.warn('[staging watcher] notify failed:', err.message);
@@ -269,11 +272,11 @@ ipcMain.handle('game:bepinex-health', () => {
 });
 
 // Staging
-ipcMain.handle('staging:list', () => {
+ipcMain.handle('staging:list', async () => {
   try {
     // Covers copies that were dropped in while the app was closed — the watcher
     // only sees changes made while it is running.
-    try { modManager.pruneStagingVersions(); } catch (e) { console.warn('[staging:list] prune failed:', e.message); }
+    try { await modManager.pruneStagingVersions(); } catch (e) { console.warn('[staging:list] prune failed:', e.message); }
     return modManager.getStagedFiles();
   } catch (e) { console.error('[staging:list]', e); return []; }
 });
@@ -295,8 +298,8 @@ ipcMain.handle('staging:remove', async (_, f) => {
   try { return await modManager.removeFromStaging(f); }
   catch (e) { return { success: false, error: e.message }; }
 });
-ipcMain.handle('staging:clear', () => {
-  try { return modManager.clearStaging(); }
+ipcMain.handle('staging:clear', async () => {
+  try { return await modManager.clearStaging(); }
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('staging:peek', async (_, f) => {
@@ -336,6 +339,14 @@ ipcMain.handle('mods:install', async (_, filename, targetKey, modName, skipRemov
   catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('mods:list', () => modManager.getInstalledMods());
+
+// ── Mod update checking ─────────────────────────────────────────────────────
+// Asks Nexus Mods' public GraphQL endpoint about THIS user's installed mods
+// only. Nothing is stored or republished; see src/main/update-check.js.
+ipcMain.handle('updates:check', async (_e, force) => {
+  try { return await updateCheck.check(modManager.getInstalledMods(), app.getVersion(), !!force); }
+  catch (e) { console.error('[updates:check]', e); return { updates: {}, latest: {}, app: null, error: e.message }; }
+});
 
 ipcMain.handle('mods:uninstall', async (event, id) => {
   try {

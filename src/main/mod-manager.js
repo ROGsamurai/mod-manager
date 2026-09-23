@@ -41,7 +41,31 @@ class ModManager {
     // retried on every refresh and on quit — see removeFromStaging.
     this._pendingDeletes = new Set();
     this._loadDb();
+    this._backfillNexusIds();
     this._migrateModData();
+  }
+
+  /**
+   * Recover each mod's Nexus id from its archive filename.
+   *
+   * nexusId is recorded at install time, so mods installed before that existed
+   * have none — and the update check asks by id, so those mods were skipped
+   * silently. Deliberately NOT gated behind a migration number: a build shipped
+   * earlier wrote a migration marker ahead of this code existing, which left the
+   * backfill permanently switched off on machines that ran it. Running every
+   * launch costs a string parse per mod and is idempotent.
+   */
+  _backfillNexusIds() {
+    let filled = 0;
+    for (const [, mod] of this.mods) {
+      if (mod.nexusId || !mod.filename) continue;
+      const parsed = this._parseNexusFilename(mod.filename);
+      if (parsed.modId) { mod.nexusId = parsed.modId; filled++; }
+    }
+    if (filled) {
+      console.log(`[mods] recovered the Nexus mod id for ${filled} mod(s)`);
+      this._saveDb();
+    }
   }
 
   _isKnownCore(name) {
@@ -1545,7 +1569,10 @@ class ModManager {
       name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
       name = name.replace(/\.(zip|rar|7z)$/i, '').trim();
       if (version) name = name.replace(/\s+v?\d+(\.\d+)*\s*$/i, '').trim();
-      return { name: name || base, version: version || '' };
+      // The first numeric group is the Nexus mod id. Keeping it lets the update
+      // check ask about this exact mod instead of matching on names.
+      const modId = numericParts.length ? Number(numericParts[0]) : null;
+      return { name: name || base, version: version || '', modId: Number.isFinite(modId) ? modId : null };
     }
 
     // NEW format: first peel an optional trailing variant tag in parentheses or
@@ -1556,6 +1583,7 @@ class ModManager {
     // instead of installing alongside it as a phantom second copy.
     let work = base.replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, '').trim();
     let version = '';
+    let parsedModId = null;
 
     // Nexus's latest download format appends "<modID> <version> [timestamp] <hash>"
     // to the name, space-separated, with a random alphanumeric download hash last
@@ -1584,7 +1612,7 @@ class ModManager {
       tokens.pop();                                                                     // random download hash
       if (isTsTok(tokens[tokens.length - 1])) tokens.pop();                             // optional build timestamp
       if (isVerTok(tokens[tokens.length - 1]) || isIntTok(tokens[tokens.length - 1])) version = tokens.pop(); // version
-      if (isIntTok(tokens[tokens.length - 1])) tokens.pop();                            // mod ID
+      if (isIntTok(tokens[tokens.length - 1])) parsedModId = Number(tokens.pop());      // mod ID
       work = tokens.join(' ');
     }
 
@@ -1599,7 +1627,7 @@ class ModManager {
     if (m) { name = m[1]; if (!version) version = m[2]; }
     name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
     name = name.replace(/\.(zip|rar|7z)$/i, '').trim();
-    return { name: name || base, version: version || '' };
+    return { name: name || base, version: version || '', modId: Number.isFinite(parsedModId) ? parsedModId : null };
   }
 
   /** How many versions of the same mod to keep in the staging folder. */
@@ -1621,7 +1649,7 @@ class ModManager {
    * The archive of a currently installed version is never removed, so Re-install
    * keeps working for whatever the user is actually running.
    */
-  pruneStagingVersions() {
+  async pruneStagingVersions() {
     const dir = this.getStagingPath();
     if (!fs.existsSync(dir)) return [];
 
@@ -1665,12 +1693,11 @@ class ModManager {
         [...group].sort()[0];
       for (const filename of group) {
         if (filename === keep) continue;
-        try {
-          fs.removeSync(path.join(dir, filename));
+        // Automatic cleanup never deletes outright: if it cannot be recycled,
+        // it stays where it is.
+        if (await this._toRecycleBin(path.join(dir, filename))) {
           removed.push(filename);
-          console.log(`[staging] pruned duplicate download: ${filename} (kept ${keep})`);
-        } catch (err) {
-          console.warn(`[staging] could not prune ${filename}:`, err.message);
+          console.log(`[staging] recycled duplicate download: ${filename} (kept ${keep})`);
         }
       }
       // A copy dropped into the folder by hand keeps its "(1)" / "- Copy" name,
@@ -1685,7 +1712,7 @@ class ModManager {
         const targetPath = path.join(dir, target);
         try {
           if (fs.existsSync(targetPath)) {
-            fs.removeSync(path.join(dir, keep));
+            if (!(await this._toRecycleBin(path.join(dir, keep)))) continue;
             removed.push(keep);
             console.log(`[staging] pruned duplicate download: ${keep} (kept ${target})`);
           } else {
@@ -1734,12 +1761,9 @@ class ModManager {
             console.log(`[staging] keeping ${filename} — it is the installed version`);
             continue;
           }
-          try {
-            fs.removeSync(path.join(dir, filename));
+          if (await this._toRecycleBin(path.join(dir, filename))) {
             removed.push(filename);
-            console.log(`[staging] pruned old version: ${filename} (${key} v${version})`);
-          } catch (err) {
-            console.warn(`[staging] could not prune ${filename}:`, err.message);
+            console.log(`[staging] recycled old version: ${filename} (${key} v${version})`);
           }
         }
       }
@@ -1784,7 +1808,7 @@ class ModManager {
       // canonical name.
       const twin = staged.get(canonKey(filename));
       if (twin && twin !== destName) {
-        try { fs.removeSync(path.join(dir, twin)); } catch {}
+        await this._toRecycleBin(path.join(dir, twin));
       }
 
       try {
@@ -1805,8 +1829,32 @@ class ModManager {
     }
 
     // A newly added version can push an older one past the retention limit.
-    const pruned = this.pruneStagingVersions();
+    const pruned = await this.pruneStagingVersions();
     return { added, skipped, replaced, pruned };
+  }
+
+  /**
+   * Move a staged archive to the Recycle Bin (the Trash on Linux).
+   *
+   * Everything the manager removes from staging goes here instead of being
+   * deleted outright, so a mistaken removal is one restore away. Returns true
+   * only when the file is actually gone from where it was.
+   *
+   * Some locations have no Recycle Bin — a USB stick or a network share, which a
+   * portable build can easily be running from — and a file locked by OneDrive
+   * or antivirus cannot be moved either. Both surface here as a rejection, so
+   * the caller decides what to do rather than this silently deleting.
+   */
+  async _toRecycleBin(filePath) {
+    try {
+      const { shell } = require('electron');
+      if (!shell?.trashItem) return false;
+      await shell.trashItem(filePath);
+      return !fs.existsSync(filePath);
+    } catch (err) {
+      console.warn(`[staging] could not recycle ${path.basename(filePath)}: ${err.message}`);
+      return false;
+    }
   }
 
   async removeFromStaging(f) {
@@ -1814,7 +1862,7 @@ class ModManager {
     // Sweep any leftovers from a previous rename-fallback delete (see below).
     try {
       for (const e of fs.readdirSync(dir)) {
-        if (/\.pending-delete-\d+$/.test(e)) { try { fs.rmSync(path.join(dir, e), { force: true }); } catch {} }
+        if (/\.pending-delete-\d+$/.test(e)) this._toRecycleBin(path.join(dir, e));
       }
     } catch {}
 
@@ -1850,12 +1898,24 @@ class ModManager {
     const delays = [0, 120, 300, 700];
     for (const wait of delays) {
       if (wait) await new Promise(r => setTimeout(r, wait));
-      try {
-        fs.rmSync(p, { force: true, maxRetries: 3, retryDelay: 100 });
-      } catch (err) {
-        lastErr = err;
-      }
-      if (!stillListed()) { this._pendingDeletes.delete(real); return { success: true }; }
+      if (await this._toRecycleBin(p)) { this._pendingDeletes.delete(real); return { success: true, recycled: true }; }
+      if (!stillListed()) { this._pendingDeletes.delete(real); return { success: true, recycled: true }; }
+    }
+
+    // Recycling failed every time. If a plain delete works, the file was never
+    // locked — this location simply has no Recycle Bin (USB stick, network
+    // share). The user asked for it gone, so delete it, and say so.
+    try {
+      fs.rmSync(p, { force: true, maxRetries: 3, retryDelay: 100 });
+    } catch (err) {
+      lastErr = err;
+    }
+    if (!stillListed()) {
+      this._pendingDeletes.delete(real);
+      return {
+        success: true, recycled: false,
+        note: `"${real}" was deleted permanently — this drive has no Recycle Bin.`,
+      };
     }
 
     // Last resort: Windows will often let a locked file be RENAMED even when it
@@ -1864,7 +1924,7 @@ class ModManager {
     try {
       const parked = path.join(dir, `${real}.pending-delete-${Date.now()}`);
       fs.renameSync(p, parked);
-      try { fs.rmSync(parked, { force: true }); } catch { /* swept later */ }
+      await this._toRecycleBin(parked);   // if still locked, swept later
       if (!stillListed()) { this._pendingDeletes.delete(real); return { success: true }; }
     } catch (err) {
       lastErr = err || lastErr;
@@ -1894,26 +1954,33 @@ class ModManager {
   sweepPendingDeletes() {
     if (!this._pendingDeletes || this._pendingDeletes.size === 0) return;
     const dir = this.getStagingPath();
+    this._recyclingNow = this._recyclingNow || new Set();
     for (const name of Array.from(this._pendingDeletes)) {
+      if (this._recyclingNow.has(name)) continue;   // an attempt is already running
       const target = path.join(dir, name);
-      try {
-        try { fs.chmodSync(target, 0o666); } catch {}
-        fs.rmSync(target, { force: true });
-      } catch { /* still locked — try again next time */ }
-      let gone = false;
-      try { gone = !fs.readdirSync(dir).includes(name); } catch { gone = true; }
-      if (gone) this._pendingDeletes.delete(name);
+      try { fs.chmodSync(target, 0o666); } catch {}
+      // Recycled in the background: this is called from synchronous code
+      // (building the staged list, quitting). A file stays pending until it is
+      // genuinely in the Recycle Bin — never deleted outright here.
+      this._recyclingNow.add(name);
+      this._toRecycleBin(target).then(ok => {
+        let gone = ok;
+        if (!gone) { try { gone = !fs.readdirSync(dir).includes(name); } catch { gone = true; } }
+        if (gone) this._pendingDeletes.delete(name);
+      }).finally(() => this._recyclingNow.delete(name));
     }
   }
 
-  clearStaging() {
+  async clearStaging() {
     const dir = this.getStagingPath();
     if (!fs.existsSync(dir)) return { success: true };
     const errors = [];
     for (const f of fs.readdirSync(dir)) {
       if (!/\.(zip|rar|7z)$/i.test(f)) continue;
-      try { fs.removeSync(path.join(dir, f)); }
-      catch (err) { errors.push(`${f}: ${err.code || err.message}`); }
+      // Clear All recycles too. A file that cannot be recycled is reported
+      // rather than deleted — emptying a whole folder permanently in one click
+      // is exactly the mistake the Recycle Bin exists to undo.
+      if (!(await this._toRecycleBin(path.join(dir, f)))) errors.push(`${f}: could not be moved to the Recycle Bin`);
     }
     if (errors.length) return { success: false, error: `Could not remove ${errors.length} file(s): ${errors.slice(0, 3).join('; ')}` };
     return { success: true };
@@ -2492,6 +2559,7 @@ class ModManager {
     const parsed = this._parseNexusFilename(filename);
     const parsedName = modName || parsed.name;
     const name = parsedName;
+    const nexusId = parsed.modId || null;   // used by the update check
     const version = parsed.version || '';
     // Remember the source archive's modified time so a later, newer archive of
     // the same mod (even with the same/no version) is recognized as an update
@@ -2738,14 +2806,14 @@ class ModManager {
           let looseDllFiles = rootFiles.map(p => p.replace(/\\/g, '/'));
           looseDllFiles = this._applyExcludeRules(looseDllFiles, this._findKnownModByName(name));
           const loosePrefab = looseDllFiles.some(f => f.toLowerCase().includes('_prefabloader'));
-          const mod = { id, name, version, filename, targetKey, installTarget: targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: !requiredFolder };
+          const mod = { id, name, version, nexusId, filename, targetKey, installTarget: targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: !requiredFolder };
           this.mods.set(id, mod);
           this._saveDb();
           this._autoAssignGroupByName(id, name, looseDllFiles);
           const dupes = await this._sweepDuplicatePluginDlls(mod);
           if (this.getDeleteAfterInstall()) {
             const zipPath = path.join(this.getStagingPath(), filename);
-            if (fs.existsSync(zipPath)) fs.removeSync(zipPath);
+            if (fs.existsSync(zipPath)) await this._toRecycleBin(zipPath);
           }
           // Same shape as the main return path. This used to return
           // { success, mod }, which the IPC layer wrapped again — the renderer
@@ -2841,7 +2909,7 @@ class ModManager {
     }
 
     const hasPrefabloader = files.some(f => f.toLowerCase().includes('_prefabloader'));
-    const mod = { id, name, version, filename, targetKey, installTarget, targetLabel: TARGETS[installTarget].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
+    const mod = { id, name, version, nexusId, filename, targetKey, installTarget, targetLabel: TARGETS[installTarget].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
     this.mods.set(id, mod);
     this._saveDb();
     this._autoAssignGroupByName(id, name, files);
@@ -2849,12 +2917,12 @@ class ModManager {
     // Delete zip from staging after install if setting is enabled
     if (this.getDeleteAfterInstall()) {
       const zipPath = path.join(this.getStagingPath(), filename);
-      if (fs.existsSync(zipPath)) fs.removeSync(zipPath);
+      if (fs.existsSync(zipPath)) await this._toRecycleBin(zipPath);
     }
 
     // Installing is the other moment the staging folder gains a version, so keep
     // it trimmed here as well as on add.
-    try { this.pruneStagingVersions(); } catch (err) { console.warn('[staging] prune failed:', err.message); }
+    try { await this.pruneStagingVersions(); } catch (err) { console.warn('[staging] prune failed:', err.message); }
 
     // Remove stray copies of this mod's own DLL left elsewhere under plugins/
     // (e.g. a hand-installed TextureReplacer.dll sitting in plugins/ next to the

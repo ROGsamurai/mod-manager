@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('api', {
   openSavesFolder: () => ipcRenderer.invoke('dialog:open-saves'),
   openGameFolder: () => ipcRenderer.invoke('dialog:open-game'),
   openUrl: (url) => ipcRenderer.invoke('dialog:open-url', url),
+  checkUpdates: (force) => ipcRenderer.invoke('updates:check', force),
   getLocale: () => ipcRenderer.invoke('app:get-locale'),
   onStagingChanged: (cb) => {
     ipcRenderer.removeAllListeners('staging:changed');

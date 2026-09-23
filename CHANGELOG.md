@@ -1,4 +1,14 @@
+Version 2.0.2
+FIXED
+- Mod update checking now works for every installed mod. Two faults stopped it: mods installed before this feature existed had no Nexus mod id recorded, and the id is now recovered from the archive filename on every launch; and asking about several mods in one filter returned nothing at all, because Nexus combines multiple values in a filter with AND. Each mod is now asked about individually, batched into a single request
+- A mod that publishes more than one current file, such as TextureReplacer's main and Newrender downloads, now reports the version of its main file rather than whichever came back first
+- Settings has a Mod Updates panel showing how many mods were recognised and any error, so a check that finds nothing can be told apart from a check that failed
+
 Version 2.0.1
+NEW
+- Mod update checking is back, rebuilt and approved by Nexus Mods. The manager asks their public GraphQL endpoint about the mods you personally have installed, once per launch, and shows Update Available next to anything with a newer version — click it to open that mod's page. Nothing is downloaded, nothing is stored on disk, and no data is republished anywhere. Mods not from Nexus Mods are never sent or checked. If the check fails, no badges appear and nothing else changes
+CHANGED
+- Anything removed from the staging folder now goes to the Recycle Bin (the Trash on Linux) instead of being deleted outright — removing a file, Clear All, delete-after-install, and the automatic cleanup of old versions and duplicate copies. A mistaken removal is one restore away. On a drive with no Recycle Bin, such as a USB stick or network share, automatic cleanup leaves the file alone, Clear All reports it rather than deleting, and removing a single file deletes it and says so
 REMOVED
 - Mod update checking has been removed. It relied on a version list compiled from Nexus Mods, and Nexus Mods have confirmed that republishing their data this way is not permitted. The manager no longer fetches, stores or displays any data that came from Nexus Mods. The Installed Mods column that showed update status is back to showing each mod's install target
 

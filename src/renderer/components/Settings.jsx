@@ -12,6 +12,8 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
   const [healthCheck, setHealthCheck] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [dupBusy, setDupBusy] = useState(false);
+  const [upd, setUpd] = useState(null);
+  const [updBusy, setUpdBusy] = useState(false);
 
   const [regroupBusy, setRegroupBusy] = useState(false);
 
@@ -147,6 +149,25 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
       </S>
         </div>
         <div>
+      <S title={t('Mod Updates')}>
+        <Opt title={t('Check for mod updates')}
+          hint={t('Asks Nexus Mods about the mods you have installed, once each time the manager starts. Nothing is downloaded and nothing is stored.')}>
+          <button className="btn btn-ghost btn-sm" disabled={updBusy} onClick={async () => {
+            setUpdBusy(true);
+            try { setUpd(await window.api.checkUpdates(true)); } finally { setUpdBusy(false); }
+            onRefreshMods?.();
+          }}>
+            {updBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Check Now')}
+          </button>
+        </Opt>
+        {upd && (
+          <div style={{ fontSize: 13, marginTop: 10, color: upd.error ? 'var(--red-bright)' : 'var(--text-3)' }}>
+            {upd.error
+              ? `${t('Check failed')}: ${upd.error}`
+              : `${upd.diagnostics?.updates ?? 0} ${t('updates found')} — ${upd.diagnostics?.answered ?? 0}/${upd.diagnostics?.withId ?? 0} ${t('mods recognised on Nexus Mods')}`}
+          </div>
+        )}
+      </S>
       <S title={t('Health Check')}>
         <button className="btn btn-ghost" onClick={async () => { setHealthBusy(true); setHealthCheck(await window.api.bepinexHealthCheck()); setHealthBusy(false); }} disabled={healthBusy} style={{ borderColor: 'var(--green-bright)' }}>
           {healthBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Health Check')}

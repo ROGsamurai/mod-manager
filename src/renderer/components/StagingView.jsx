@@ -311,8 +311,13 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                         const failed = results.filter(r => r && r.success === false);
                         if (failed.length) notify(failed[0].error || 'Could not remove file', 'error');
                         else {
-                          const deferred = results.find(r => r && r.deferred && r.note);
-                          if (deferred) notify(deferred.note, 'warn');
+                          // Anything that could not go to the Recycle Bin says so:
+                          // a locked file deferred, or a drive with no Recycle Bin.
+                          const noted = results.find(r => r && r.note);
+                          if (noted) notify(noted.note, 'warn');
+                          else if (results.every(r => r && r.recycled)) {
+                            notify(t('Moved to the Recycle Bin'), 'success');
+                          }
                         }
                         await onRefresh();
                       } catch (e) {

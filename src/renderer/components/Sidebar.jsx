@@ -44,7 +44,7 @@ const NAV = [
 const darkThemes = THEMES.filter(t => t.group === 'dark');
 const lightThemes = THEMES.filter(t => t.group === 'light');
 
-export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, onChangeTheme }) {
+export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, onChangeTheme, appUpdate }) {
   const { t, locale, setLocale } = useI18n();
 
   return (
@@ -100,6 +100,20 @@ export default function Sidebar({ view, onNav, modCount, stagedCount, themeId, o
         <div style={{ display: 'flex', justifyContent: 'center', padding: '0 4px' }}>
           <span className="badge badge-accent">{APP_VERSION}</span>
         </div>
+        {/* The manager's own update state. The label says "Mod Manager" so it is
+            never mistaken for a mod update. */}
+        {appUpdate ? (
+          <button type="button" className="pill pill-info pill-pulse"
+            title={`v${appUpdate.installed} → v${appUpdate.latest} · ${t('Open on Nexus Mods')}`}
+            onClick={() => window.api.openUrl(`https://www.nexusmods.com/tcgcardshopsimulator/mods/${appUpdate.modId}`)}
+            style={{ width: '100%', justifyContent: 'center', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {t('Mod Manager Update Available')}
+          </button>
+        ) : (
+          <span className="pill" style={{ width: '100%', justifyContent: 'center', color: 'var(--text-4)' }}>
+            {t('Current Version')}
+          </span>
+        )}
       </div>
     </aside>
   );
