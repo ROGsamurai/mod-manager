@@ -100,7 +100,7 @@ const INSTALLABLE_EXCLUDED = new Set(['OLD_VERSION', 'DELETED', 'ARCHIVED', 'REM
 
 class UpdateCheck {
   constructor() {
-    this._session = null;      // in-memory only, cleared when the app closes
+    this._data = null;         // Nexus's answer, in memory only, cleared on exit
   }
 
   /** Newest-first comparison, tolerant of "v1.2", "1.0.0.3" and "Beta 2". */
@@ -121,7 +121,12 @@ class UpdateCheck {
    * @param {boolean} force       ignore the session result and ask again
    */
   async check(installedMods = [], appVersion = null, force = false) {
-    if (this._session && !force) return this._session;
+    // What is cached is the ANSWER FROM NEXUS, not the comparison against the
+    // installed mods. Caching the computed result meant that after installing
+    // an update the badge still reported the version held at launch, because
+    // the same object was handed back. Comparisons are redone every call; the
+    // network is still touched only once per launch.
+    if (this._data && !force) return this._compare(installedMods, appVersion);
 
     // Only ids this user actually has, plus the manager itself.
     const ids = [...new Set(installedMods.map(m => Number(m.nexusId)).filter(Boolean))];
@@ -167,6 +172,14 @@ class UpdateCheck {
         this._fileListError = err.message;
       }
     }
+
+    this._data = { byId, fileLists, checkedAt: Date.now() };
+    return this._compare(installedMods, appVersion);
+  }
+
+  /** Compare what Nexus said against the mods installed RIGHT NOW. */
+  _compare(installedMods = [], appVersion = null) {
+    const { byId, fileLists, checkedAt } = this._data || { byId: new Map(), fileLists: new Map() };
 
     /** Newest published version for one installed mod, by id then by file name. */
     const publishedFor = mod => {
@@ -214,18 +227,19 @@ class UpdateCheck {
       app = { installed: appVersion, latest: String(appNode.version), modId: APP_MOD_ID, name: appNode.name };
     }
 
-    // Reported in Settings so a check that finds nothing can be told apart from
-    // a check that never ran. Silent failure was the reason this took so long to
-    // diagnose the first time.
-    const diagnostics = {
-      installed: installedMods.length,
-      withId: ids.filter(id => id !== APP_MOD_ID).length,
-      answered: byId.size,
-      withFiles: fileLists.size,
-      updates: Object.keys(updates).length,
+    // Reported in Settings so a check that found nothing can be told apart from
+    // one that never ran.
+    const withId = installedMods.filter(m => m?.nexusId).length;
+    return {
+      updates, latest, app, checkedAt,
+      diagnostics: {
+        installed: installedMods.length,
+        withId,
+        answered: byId.size,
+        withFiles: fileLists.size,
+        updates: Object.keys(updates).length,
+      },
     };
-    this._session = { updates, latest, app, diagnostics, checkedAt: Date.now() };
-    return this._session;
   }
 }
 

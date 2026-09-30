@@ -26,9 +26,14 @@ export default function ConfigEditor({ notify }) {
     setSaving(null);
   };
 
+  // Null-safe on purpose. A config entry with no comment block above it has no
+  // description, and `!search` short-circuits the whole expression while the box
+  // is empty — so the first keystroke was the first time these were touched.
+  const q = search.toLowerCase();
+  const matches = e => String(e?.key || '').toLowerCase().includes(q)
+    || String(e?.description || '').toLowerCase().includes(q);
   const filteredSections = config?.sections?.filter(s =>
-    !search || s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.entries.some(e => e.key.toLowerCase().includes(search.toLowerCase()) || e.description.toLowerCase().includes(search.toLowerCase()))
+    !search || String(s?.name || '').toLowerCase().includes(q) || (s?.entries || []).some(matches)
   ) || [];
 
   return (
@@ -85,9 +90,7 @@ export default function ConfigEditor({ notify }) {
                   <div className="mono" style={{ padding: '10px 20px', background: 'var(--bg-base)', fontSize: 13, fontWeight: 700, color: 'var(--text-2)' }}>
                     [{section.name}]
                   </div>
-                  {section.entries.filter(e =>
-                    !search || e.key.toLowerCase().includes(search.toLowerCase()) || e.description.toLowerCase().includes(search.toLowerCase())
-                  ).map(entry => (
+                  {(section.entries || []).filter(e => !search || matches(e)).map(entry => (
                     <ConfigEntry key={`${section.name}.${entry.key}`} entry={entry} section={section.name}
                       saving={saving === `${section.name}.${entry.key}`} onSave={saveValue} />
                   ))}
@@ -105,7 +108,11 @@ export default function ConfigEditor({ notify }) {
 }
 
 function ConfigEntry({ entry, section, saving, onSave }) {
-  const [val, setVal] = useState(entry.value);
+  // Its own hook: this is a separate component, so the parent's t() is not in
+  // scope here. Without this the Save button threw "t is not defined" the
+  // moment a value was edited, which unmounted the screen.
+  const { t } = useI18n();
+  const [val, setVal] = useState(entry.value ?? '');
   const changed = val !== entry.value;
 
   const handleSave = () => { onSave(section, entry.key, val); entry.value = val; };
@@ -116,7 +123,7 @@ function ConfigEntry({ entry, section, saving, onSave }) {
         <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--mono)' }}>{entry.key}</div>
         {entry.description && (
           <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 3, lineHeight: 1.5 }}>
-            {entry.description.split('\n').filter(l => !l.startsWith('Setting type') && !l.startsWith('Default value')).join(' ').trim()}
+            {String(entry.description).split('\n').filter(l => !l.startsWith('Setting type') && !l.startsWith('Default value')).join(' ').trim()}
           </div>
         )}
       </div>
@@ -146,6 +153,9 @@ function ConfigEntry({ entry, section, saving, onSave }) {
               style={{ width: 100 }} />
             <span style={{ fontSize: 13, fontFamily: 'var(--mono)', color: 'var(--text-3)', minWidth: 40, textAlign: 'right' }}>{val}</span>
           </div>
+        ) : entry.type === 'key' ? (
+          <KeyBind value={val} t={t}
+            onChange={nv => { setVal(nv); onSave(section, entry.key, nv); entry.value = nv; }} />
         ) : (
           <>
             <input className="input" value={val} onChange={e => setVal(e.target.value)}
@@ -159,6 +169,75 @@ function ConfigEntry({ entry, section, saving, onSave }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Press-a-key control for a BepInEx KeyboardShortcut.
+ *
+ * The stored format is Unity KeyCode names joined by " + ", modifiers first:
+ * "LeftControl + P". Those names are not what a key is labelled — the 1 key is
+ * "Alpha1", Escape is "Escape", the arrows are "UpArrow" — so the value is
+ * captured from a real key press rather than typed.
+ */
+function KeyBind({ value, onChange, t }) {
+  const [listening, setListening] = useState(false);
+
+  /** Unity KeyCode name for a keydown event. */
+  const codeToKeyCode = e => {
+    const c = e.code;
+    if (/^Key[A-Z]$/.test(c)) return c.slice(3);
+    if (/^Digit\d$/.test(c)) return `Alpha${c.slice(5)}`;
+    if (/^Numpad\d$/.test(c)) return `Keypad${c.slice(6)}`;
+    if (/^F\d{1,2}$/.test(c)) return c;
+    const named = {
+      ArrowUp: 'UpArrow', ArrowDown: 'DownArrow', ArrowLeft: 'LeftArrow', ArrowRight: 'RightArrow',
+      Escape: 'Escape', Space: 'Space', Enter: 'Return', NumpadEnter: 'KeypadEnter', Tab: 'Tab',
+      Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End',
+      PageUp: 'PageUp', PageDown: 'PageDown', Minus: 'Minus', Equal: 'Equals',
+      BracketLeft: 'LeftBracket', BracketRight: 'RightBracket', Backslash: 'Backslash',
+      Semicolon: 'Semicolon', Quote: 'Quote', Backquote: 'BackQuote', Comma: 'Comma',
+      Period: 'Period', Slash: 'Slash', CapsLock: 'CapsLock',
+      NumpadAdd: 'KeypadPlus', NumpadSubtract: 'KeypadMinus', NumpadMultiply: 'KeypadMultiply',
+      NumpadDivide: 'KeypadDivide', NumpadDecimal: 'KeypadPeriod',
+    };
+    return named[c] || null;
+  };
+
+  const onKeyDown = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    // A modifier on its own is not a shortcut; wait for the real key.
+    if (['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) return;
+    if (e.code === 'Escape') { setListening(false); return; }
+    const main = codeToKeyCode(e);
+    if (!main) return;                       // unmapped key: keep listening
+    const mods = [];
+    if (e.ctrlKey) mods.push('LeftControl');
+    if (e.shiftKey) mods.push('LeftShift');
+    if (e.altKey) mods.push('LeftAlt');
+    onChange([...mods, main].join(' + '));
+    setListening(false);
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button type="button"
+        onClick={() => setListening(true)}
+        onBlur={() => setListening(false)}
+        onKeyDown={listening ? onKeyDown : undefined}
+        className={`btn btn-sm ${listening ? 'btn-accent' : 'btn-ghost'}`}
+        title={t('Click, then press the key combination. Escape cancels.')}
+        style={{ minWidth: 150, justifyContent: 'center', fontFamily: 'var(--mono)', fontSize: 12.5 }}>
+        {listening ? t('Press a key…') : (value || t('Unbound'))}
+      </button>
+      {value && !listening && (
+        <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => onChange('')}
+          title={t('Clear')} aria-label={t('Clear')} style={{ width: 26, height: 26 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12" /><path d="M18 6L6 18" /></svg>
+        </button>
+      )}
     </div>
   );
 }

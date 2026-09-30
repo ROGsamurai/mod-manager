@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import ErrorBoundary from './ErrorBoundary';
 import { I18nProvider, useI18n } from './i18n';
 import { applyTheme } from './themes';
 import Sidebar from './components/Sidebar';
@@ -311,16 +312,18 @@ function AppInner() {
       </header>
 
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-deep)'}}>
-          {view==='suggested'&&<SuggestedMods mods={mods}/>}
-          {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
-          {view==='config'&&<ConfigEditor notify={notify}/>}
-          {view==='profiles'&&<ProfileManager mods={mods} notify={notify} onRefresh={refreshMods}/>}
-          {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
-            notify={notify} onRefreshMods={refreshMods} onRefreshStaged={refreshStaged}
-            onSetBepinex={async()=>setBepinex(await window.api.getBepInExStatus())}
-            onSetPath={async()=>{const p=await window.api.openFolderDialog();if(p){const r=await window.api.setGamePath(p);const finalPath=(r&&r.path)||p;setGamePath(finalPath);setBepinex(await window.api.getBepInExStatus());notify(r&&r.adjusted?t('Game path set to the Content folder (where mods must go)'):t('Game path set'),'success');}}}
-            onDetect={async()=>{const p=await window.api.detectGame();if(p){setGamePath(p);setBepinex(await window.api.getBepInExStatus());notify('Game found!','success');}else notify('Could not auto-detect.','error');}}/>}
+          <ErrorBoundary key={view}>
+            {view==='suggested'&&<SuggestedMods mods={mods}/>}
+            {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
+            {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
+            {view==='config'&&<ConfigEditor notify={notify}/>}
+            {view==='profiles'&&<ProfileManager mods={mods} notify={notify} onRefresh={refreshMods}/>}
+            {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
+              notify={notify} onRefreshMods={refreshMods} onRefreshStaged={refreshStaged}
+              onSetBepinex={async()=>setBepinex(await window.api.getBepInExStatus())}
+              onSetPath={async()=>{const p=await window.api.openFolderDialog();if(p){const r=await window.api.setGamePath(p);const finalPath=(r&&r.path)||p;setGamePath(finalPath);setBepinex(await window.api.getBepInExStatus());notify(r&&r.adjusted?t('Game path set to the Content folder (where mods must go)'):t('Game path set'),'success');}}}
+              onDetect={async()=>{const p=await window.api.detectGame();if(p){setGamePath(p);setBepinex(await window.api.getBepInExStatus());notify('Game found!','success');}else notify('Could not auto-detect.','error');}}/>}
+          </ErrorBoundary>
         </main>
         </div>
       </div>

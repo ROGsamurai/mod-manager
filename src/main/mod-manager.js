@@ -42,7 +42,66 @@ class ModManager {
     this._pendingDeletes = new Set();
     this._loadDb();
     this._backfillNexusIds();
+    this._mergeDuplicateMods();   // after the ids exist: the merge relies on them
     this._migrateModData();
+  }
+
+  /**
+   * Merge entries that are the same mod recorded twice.
+   *
+   * An author renaming their archive used to install the new release as a
+   * separate mod, leaving two rows: the old name at the old version and the new
+   * name at the new one. Both point at the same files on disk, so the stale row
+   * reports an update that can never be satisfied and confuses the staged list.
+   *
+   * Two entries are the same mod when they share a Nexus mod id AND their file
+   * lists overlap, or when their names match once separators are removed. The
+   * surviving entry keeps the OLDEST name — the one the user has been looking
+   * at — and the id of the oldest install, so profiles and groups still point
+   * at it, while taking the newest version and its file list.
+   *
+   * Database only: no file is added, moved or deleted here.
+   */
+  _mergeDuplicateMods() {
+    const squash = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const tail = f => String(f).replace(/\\/g, '/').toLowerCase();
+    const overlaps = (a, b) => {
+      const A = new Set((a.files || []).map(tail));
+      return (b.files || []).some(f => A.has(tail(f)));
+    };
+    const sameMod = (a, b) => {
+      if (squash(a.name) && squash(a.name) === squash(b.name)) return true;
+      return a.nexusId && Number(a.nexusId) === Number(b.nexusId) && overlaps(a, b);
+    };
+
+    const entries = Array.from(this.mods.entries());
+    const removed = [];
+    for (let i = 0; i < entries.length; i++) {
+      const [idA, a] = entries[i];
+      if (!this.mods.has(idA)) continue;
+      for (let j = i + 1; j < entries.length; j++) {
+        const [idB, b] = entries[j];
+        if (!this.mods.has(idB) || !sameMod(a, b)) continue;
+
+        // Oldest install wins the name and the id; newest version wins the rest.
+        const aFirst = String(a.installedAt || '') <= String(b.installedAt || '');
+        const keepId = aFirst ? idA : idB;
+        const keepName = (aFirst ? a : b).name;
+        const newer = this._compareVersions(a.version || '0', b.version || '0') >= 0 ? a : b;
+        const merged = { ...newer, id: keepId, name: keepName };
+
+        const dropId = keepId === idA ? idB : idA;
+        this.mods.delete(dropId);
+        this.mods.set(keepId, merged);
+        removed.push(`${(aFirst ? b : a).name} -> ${keepName}`);
+        Object.assign(a, merged);
+      }
+    }
+    if (removed.length) {
+      console.log(`[mods] merged ${removed.length} duplicate entry(ies): ${removed.join(', ')}`);
+      this._saveDb();
+    }
+    return removed;
   }
 
   /**
@@ -1355,10 +1414,19 @@ class ModManager {
     this.sweepPendingDeletes();
 
     // Installed versions lookup
+    // Keyed three ways, because an author can rename an archive between
+    // releases and the staged file then looks like a different mod: by base
+    // name, by the name with separators removed, and by Nexus mod id. Without
+    // the last two, the older staged archive of a renamed mod offered
+    // "Install" instead of "Downgrade".
     const installed = new Map();
+    const squashKey = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const mod of this.mods.values()) {
       const key = this._baseName(mod.name);
       if (key) installed.set(key, { version: mod.version || '', installedAt: mod.installedAt || '', archiveMtime: mod.archiveMtime || 0, filename: mod.filename || '' });
+      const info = { version: mod.version || '', installedAt: mod.installedAt || '', archiveMtime: mod.archiveMtime || 0, filename: mod.filename || '' };
+      if (key) installed.set(`squash:${squashKey(key)}`, info);
+      if (mod.nexusId) installed.set(`id:${mod.nexusId}`, info);
     }
 
     // List directory entries. If the whole readdir fails (rare — usually permissions
@@ -1404,15 +1472,36 @@ class ModManager {
         mtime,
         statError,
         parsedName: parsed.name,
+        parsedModId: parsed.modId || null,   // lets a renamed archive still match its install
         parsedVersion: parsed.version,
         base: this._baseName(parsed.name),
       });
     }
 
-    // Group by base name
+    // Group by base name, with separators removed and — where the filename
+    // carries one — the Nexus mod id folded in. An author renaming the archive
+    // ("Shop C - Full Third Shop Expansion" -> "ShopC-FullThirdShopExpansion")
+    // otherwise produced two unrelated rows, each offering an install, instead
+    // of one row with the older download as a downgrade beneath it.
     const groups = new Map();
+    const groupKeyOf = f => {
+      const squashed = squashKey(f.base || '');
+      return squashed ? (f.parsedModId ? `${f.parsedModId}:${squashed}` : squashed) : (f.base || f.filename);
+    };
+    // Two spellings of one mod share a mod id but squash differently only when
+    // the rename changed more than separators; catch those by id + overlap of
+    // the shorter name inside the longer one.
+    const keyAliases = new Map();
     for (const f of allFiles) {
-      const key = f.base || f.filename;
+      let key = groupKeyOf(f);
+      if (f.parsedModId) {
+        const sq = squashKey(f.base || '');
+        for (const [existingKey, meta] of keyAliases) {
+          if (meta.modId !== f.parsedModId) continue;
+          if (meta.squashed.startsWith(sq) || sq.startsWith(meta.squashed)) { key = existingKey; break; }
+        }
+        if (!keyAliases.has(key)) keyAliases.set(key, { modId: f.parsedModId, squashed: sq });
+      }
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(f);
     }
@@ -1432,7 +1521,11 @@ class ModManager {
       const newest = files[0];
       const olderFiles = files.slice(1);
 
-      const inst = installed.get(base);
+      // base name, then the separator-free name, then the mod id parsed from
+      // the staged filename.
+      const inst = installed.get(base)
+        || installed.get(`squash:${squashKey(base)}`)
+        || (newest.parsedModId ? installed.get(`id:${newest.parsedModId}`) : undefined);
       const installedVersion = inst ? inst.version : undefined;
       // Is this staged archive a newer download than the one the current copy
       // was installed from? Prefer an archive-date-to-archive-date comparison
@@ -2558,7 +2651,7 @@ class ModManager {
 
     const parsed = this._parseNexusFilename(filename);
     const parsedName = modName || parsed.name;
-    const name = parsedName;
+    let name = parsedName;   // may be replaced by the name of the entry this update replaces
     const nexusId = parsed.modId || null;   // used by the update check
     const version = parsed.version || '';
     // Remember the source archive's modified time so a later, newer archive of
@@ -2682,11 +2775,56 @@ class ModManager {
     // only the canonical one would install a second copy alongside it.
     const baseKey = this._baseName(name);
     const parsedKey = this._baseName(parsedName);
+
+    // Authors rename their archives between releases, and the new name is a
+    // different base key, so the update installed as a SECOND mod beside the
+    // old one — "Shop C - Full Third Shop Expansion" became
+    // "ShopC-FullThirdShopExpansion", and "Upstairs - Second Floor Shop
+    // Expansion" became "Upstairs". Two extra ways to recognise the same mod:
+    //
+    //   1. the same name ignoring separators entirely, which catches a rename
+    //      that only removed spaces and hyphens;
+    //   2. the same Nexus mod id AND an overlapping set of installed files.
+    //
+    // The file overlap is what makes the id safe to use: a multi-file mod like
+    // the Pokemon pack has eight downloads sharing one mod id, and those write
+    // different files, so they stay separate as they should.
+    const squash = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const squashedKeys = new Set([squash(baseKey), squash(parsedKey)].filter(Boolean));
+    const incomingFiles = new Set((archivePaths || [])
+      .map(p => String(p).replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase())
+      .filter(Boolean));
+    const sharesFiles = m => Array.isArray(m.files) && m.files.length > 0
+      && m.files.some(f => {
+        const rel = String(f).replace(/\\/g, '/').toLowerCase();
+        // An installed path is recorded relative to the game folder; an archive
+        // path is relative to the archive root. Compare on the tail.
+        return [...incomingFiles].some(a => a === rel || rel.endsWith('/' + a) || a.endsWith('/' + rel)
+          || a.split('/').pop() === rel.split('/').pop());
+      });
+
     let removedOldFiles = 0;
     let previousWasUntracked = false;
+    // What the entry being replaced was, so the replacement can keep it. An
+    // author's rename should not rename the mod in someone's list, and the id
+    // must survive because profiles and groups refer to mods by id.
+    let inherited = null;
     for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
-      if (m.filename === filename || mBase === baseKey || mBase === parsedKey) {
+      const renamedSameMod = nexusId && Number(m.nexusId) === Number(nexusId) && sharesFiles(m);
+      if (m.filename === filename || mBase === baseKey || mBase === parsedKey
+          || squashedKeys.has(squash(mBase)) || renamedSameMod) {
+        if (renamedSameMod && mBase !== baseKey) {
+          console.log(`[install] "${m.name}" and "${name}" are the same mod (id ${nexusId}, shared files) — replacing rather than adding`);
+        }
+        if (!inherited) {
+          inherited = {
+            id: oldId,
+            name: m.name,
+            core: m.core,
+            groupId: (this.getModGroups?.() || []).find(g => (g.modIds || []).includes(oldId))?.id || null,
+          };
+        }
         try {
           // Report as its own phase so the UI can show "Removing old version"
           // instead of a progress bar that just says "Installing" throughout —
@@ -2712,12 +2850,20 @@ class ModManager {
     // duplicate. Handles cases where a mod was previously scan-imported with
     // a slightly different name casing (e.g. folder "Endgame Overhaul" on
     // disk vs DB entry "EndGame Overhaul"), or the user simply reinstalls.
-    let id;
+    let id = inherited?.id;
+    // Keep the name already on screen. When an author renames the archive
+    // ("Shop C - Full Third Shop Expansion" -> "ShopC-FullThirdShopExpansion")
+    // the mod is the same mod; renaming the user's entry to the new spelling
+    // is a change they did not ask for. An explicit name from the caller — a
+    // manual rename — still wins.
+    if (inherited?.name && !modName) name = inherited.name;
     const lowerName = (name || '').toLowerCase();
-    for (const [existingId, existingMod] of this.mods) {
-      if ((existingMod.name || '').toLowerCase() === lowerName) {
-        id = existingId;
-        break;
+    if (!id) {
+      for (const [existingId, existingMod] of this.mods) {
+        if ((existingMod.name || '').toLowerCase() === lowerName) {
+          id = existingId;
+          break;
+        }
       }
     }
     if (!id) id = `mod_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -2806,8 +2952,10 @@ class ModManager {
           let looseDllFiles = rootFiles.map(p => p.replace(/\\/g, '/'));
           looseDllFiles = this._applyExcludeRules(looseDllFiles, this._findKnownModByName(name));
           const loosePrefab = looseDllFiles.some(f => f.toLowerCase().includes('_prefabloader'));
-          const mod = { id, name, version, nexusId, filename, targetKey, installTarget: targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: !requiredFolder };
+          const mod = { id, name, version, nexusId, filename, targetKey, installTarget: targetKey, targetLabel: target.label, extractTo, enabled: true, core: inherited?.core ?? (this._isKnownCore(name) || loosePrefab), installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: !requiredFolder };
           this.mods.set(id, mod);
+          // Back into whatever group it was in before.
+          if (inherited?.groupId) { try { this.setModGroup(id, inherited.groupId); } catch {} }
           this._saveDb();
           this._autoAssignGroupByName(id, name, looseDllFiles);
           const dupes = await this._sweepDuplicatePluginDlls(mod);
@@ -2909,8 +3057,9 @@ class ModManager {
     }
 
     const hasPrefabloader = files.some(f => f.toLowerCase().includes('_prefabloader'));
-    const mod = { id, name, version, nexusId, filename, targetKey, installTarget, targetLabel: TARGETS[installTarget].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
+    const mod = { id, name, version, nexusId, filename, targetKey, installTarget, targetLabel: TARGETS[installTarget].label, extractTo, enabled: true, core: inherited?.core ?? (this._isKnownCore(name) || hasPrefabloader), installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
     this.mods.set(id, mod);
+    if (inherited?.groupId) { try { this.setModGroup(id, inherited.groupId); } catch {} }
     this._saveDb();
     this._autoAssignGroupByName(id, name, files);
 
@@ -4119,6 +4268,10 @@ class ModManager {
           const vals = accMatch[1].split(',').map(v => v.trim()).filter(Boolean);
           if (vals.length > 1) { type = 'select'; acceptable = vals; }
         }
+        // BepInEx writes "Setting type: KeyboardShortcut" for keybinds. Typing
+        // one by hand means knowing Unity's KeyCode spelling ("Alpha1",
+        // "LeftControl"), so these get a press-a-key control instead.
+        if (/Setting type:\s*KeyboardShortcut/i.test(descText)) type = 'key';
         const rangeMatch = descText.match(/Acceptable value range:\s*From\s*(-?[\d.]+)\s*to\s*(-?[\d.]+)/i);
         let range = null;
         if (rangeMatch) { range = { min: parseFloat(rangeMatch[1]), max: parseFloat(rangeMatch[2]) }; type = 'number'; }
@@ -4218,10 +4371,13 @@ class ModManager {
       'holographic overhaul': ['enhancedprefabloader'],
       'grading overhaul': ['enhancedprefabloader'],
       'collection tracker': ['enhancedprefabloader'],
-      'base expansions': ['enhancedprefabloader', 'holographic overhaul'],
-      'neo expansions': ['enhancedprefabloader', 'holographic overhaul'],
-      'gym expansions': ['enhancedprefabloader', 'holographic overhaul'],
-      'pokemon expansions': ['enhancedprefabloader', 'holographic overhaul'],
+      // Holographic Overhaul is no longer a dependency of anything. Card foils
+      // now come from RTCGO Holographics, which is a recommendation rather than
+      // a requirement — the sets work without it.
+      'base expansions': ['enhancedprefabloader'],
+      'neo expansions': ['enhancedprefabloader'],
+      'gym expansions': ['enhancedprefabloader'],
+      'pokemon expansions': ['enhancedprefabloader'],
       'pokemon accessories': ['enhancedprefabloader', 'phone overhaul'],
       'pokemon figurines': ['enhancedprefabloader'],
       'pokemon plushies': ['enhancedprefabloader'],
@@ -4299,18 +4455,14 @@ class ModManager {
       }
     }
 
-    // Auto-detect: any mod with "Expansions" in name needs Holographic Overhaul
-    const hasHoloOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('holographicoverhaul'));
-    if (!hasHoloOverhaul) {
-      for (const mod of this.mods.values()) {
-        if (ident(mod.name).includes('holographicoverhaul')) continue;
-        if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Holographic Overhaul')) continue;
-        if (mod.name.toLowerCase().includes('expansion')) {
-          warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Holographic Overhaul' });
-        }
-      }
-    }
-
+    // Holographic Overhaul is detected from a mod's FILES further down, never
+    // from its name. There used to be a rule here flagging any mod with
+    // "expansion" in its name, on the assumption that it meant a card
+    // expansion — but "Shop C - Full Third Shop Expansion" and "Upstairs -
+    // Second Floor Shop Expansion" are extra rooms, and were told they needed
+    // a mod they have nothing to do with. A mod that actually uses holographics
+    // ships files under "Holographic Overhaul/", which is what the later rule
+    // looks for.
     // Auto-detect: any mod with Phone - Overhaul/ in its files needs Phone Overhaul
     const hasPhoneOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('phoneoverhaul'));
     if (!hasPhoneOverhaul) {
@@ -4319,17 +4471,6 @@ class ModManager {
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Phone Overhaul')) continue;
         if (mod.files && mod.files.some(f => /phone\s*-\s*overhaul[/\\]/i.test(f))) {
           warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Phone Overhaul' });
-        }
-      }
-    }
-
-    // Auto-detect: any mod with Holographic Overhaul/ in its files needs Holographic Overhaul
-    if (!hasHoloOverhaul) {
-      for (const mod of this.mods.values()) {
-        if (ident(mod.name).includes('holographicoverhaul')) continue;
-        if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Holographic Overhaul')) continue;
-        if (mod.files && mod.files.some(f => /holographic.overhaul[/\\]/i.test(f))) {
-          warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Holographic Overhaul' });
         }
       }
     }
@@ -5330,6 +5471,7 @@ class ModManager {
       'phone - overhaul',
       'grading overhaul',
       'holographic overhaul',
+      'rtcgo holographics',
       'collection tracker',
       'collectiontracker',
     ]);
