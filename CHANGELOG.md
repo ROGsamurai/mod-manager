@@ -1,3 +1,9 @@
+Version 2.0.3
+CHANGED
+- Holographic Overhaul is no longer treated as a requirement. Card expansions no longer list it as a dependency, and no mod is told it is missing — card foils are an enhancement, not something a set needs to work
+- Getting Started now recommends RTCGO Holographics in both the Pokemon and Pokemon Pocket bundles
+- EnhancedPrefabLoader API is placed in the Main Core Mods group, and so is a version of Enhanced Prefab Loader whose name carries a tag in brackets, such as "EnhancedPrefabLoader (1.0Classic)". Group matching was exact, so the tag kept it out
+
 Version 2.0.2
 FIXED
 - Mod update checking now works for every installed mod. Two faults stopped it: mods installed before this feature existed had no Nexus mod id recorded, and the id is now recovered from the archive filename on every launch; and asking about several mods in one filter returned nothing at all, because Nexus combines multiple values in a filter with AND. Each mod is now asked about individually, batched into a single request

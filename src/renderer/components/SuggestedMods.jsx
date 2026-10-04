@@ -37,10 +37,10 @@ const BUNDLES = [
       { name: 'Phone - Overhaul', role: 'required', id: 685 },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
-      { name: 'Holographic Overhaul', role: 'required', id: 617 },
       { name: 'TextureReplacer', role: 'required', id: 69, note: 'Required for Shop Textures.' },
       { name: 'Collection Tracker', role: 'required', id: 867, note: 'Required for Promo Cards.' },
 
+      { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },
       { name: 'Enhanced Binder', role: 'recommended', id: 1116 },
       { name: 'EPL Demand', role: 'recommended', id: 1084 },
       { name: 'Grading Overhaul', role: 'recommended', id: 612 },
@@ -66,7 +66,7 @@ const BUNDLES = [
 
       // Pocket's requirements differ from the main Pokemon mod: no
       // TextureReplacer, Collection Tracker is required outright, and
-      // Holographic Overhaul is only recommended.
+      // and Collection Tracker is required outright.
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
       { name: 'Phone - Overhaul', role: 'required', id: 685 },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
@@ -77,7 +77,7 @@ const BUNDLES = [
       { name: 'Enhanced Binder', role: 'recommended', id: 1116 },
       { name: 'EPL Demand', role: 'recommended', id: 1084 },
       { name: 'Grading Overhaul', role: 'recommended', id: 612 },
-      { name: 'Holographic Overhaul', role: 'recommended', id: 617 },
+      { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },
       { name: 'RTCGO Custom TV', role: 'recommended', id: 895 },
     ],
   },

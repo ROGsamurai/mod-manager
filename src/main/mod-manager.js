@@ -4218,10 +4218,13 @@ class ModManager {
       'holographic overhaul': ['enhancedprefabloader'],
       'grading overhaul': ['enhancedprefabloader'],
       'collection tracker': ['enhancedprefabloader'],
-      'base expansions': ['enhancedprefabloader', 'holographic overhaul'],
-      'neo expansions': ['enhancedprefabloader', 'holographic overhaul'],
-      'gym expansions': ['enhancedprefabloader', 'holographic overhaul'],
-      'pokemon expansions': ['enhancedprefabloader', 'holographic overhaul'],
+      // Holographic Overhaul is no longer a dependency of anything. Card foils
+      // now come from RTCGO Holographics, which is a recommendation rather than
+      // a requirement — the sets work without it.
+      'base expansions': ['enhancedprefabloader'],
+      'neo expansions': ['enhancedprefabloader'],
+      'gym expansions': ['enhancedprefabloader'],
+      'pokemon expansions': ['enhancedprefabloader'],
       'pokemon accessories': ['enhancedprefabloader', 'phone overhaul'],
       'pokemon figurines': ['enhancedprefabloader'],
       'pokemon plushies': ['enhancedprefabloader'],
@@ -4299,18 +4302,6 @@ class ModManager {
       }
     }
 
-    // Auto-detect: any mod with "Expansions" in name needs Holographic Overhaul
-    const hasHoloOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('holographicoverhaul'));
-    if (!hasHoloOverhaul) {
-      for (const mod of this.mods.values()) {
-        if (ident(mod.name).includes('holographicoverhaul')) continue;
-        if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Holographic Overhaul')) continue;
-        if (mod.name.toLowerCase().includes('expansion')) {
-          warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Holographic Overhaul' });
-        }
-      }
-    }
-
     // Auto-detect: any mod with Phone - Overhaul/ in its files needs Phone Overhaul
     const hasPhoneOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('phoneoverhaul'));
     if (!hasPhoneOverhaul) {
@@ -4319,17 +4310,6 @@ class ModManager {
         if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Phone Overhaul')) continue;
         if (mod.files && mod.files.some(f => /phone\s*-\s*overhaul[/\\]/i.test(f))) {
           warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Phone Overhaul' });
-        }
-      }
-    }
-
-    // Auto-detect: any mod with Holographic Overhaul/ in its files needs Holographic Overhaul
-    if (!hasHoloOverhaul) {
-      for (const mod of this.mods.values()) {
-        if (ident(mod.name).includes('holographicoverhaul')) continue;
-        if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Holographic Overhaul')) continue;
-        if (mod.files && mod.files.some(f => /holographic.overhaul[/\\]/i.test(f))) {
-          warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Holographic Overhaul' });
         }
       }
     }
@@ -5326,10 +5306,13 @@ class ModManager {
       'pre-configured bepinex with configuration manager',
       'enhanced prefab loader',
       'enhancedprefabloader',
+      'enhanced prefab loader api',
+      'enhancedprefabloader api',
       'phone overhaul',
       'phone - overhaul',
       'grading overhaul',
       'holographic overhaul',
+      'rtcgo holographics',
       'collection tracker',
       'collectiontracker',
     ]);
@@ -5377,6 +5360,11 @@ class ModManager {
       if (r.namePattern && name && r.namePattern.test(name)) return true;
       if (r.pathPattern && fileList.some(f => r.pathPattern.test(f))) return true;
       if (r.names && lowerName && r.names.has(lowerName)) return true;
+      // Same name with any bracketed tag removed: "EnhancedPrefabLoader
+      // (1.0Classic)" is EnhancedPrefabLoader. Matching was exact, so the tag
+      // kept it out of its group.
+      const untagged = lowerName.replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ').replace(/\s+/g, ' ').trim();
+      if (r.names && untagged && untagged !== lowerName && r.names.has(untagged)) return true;
       return false;
     });
     if (!rule) return;
