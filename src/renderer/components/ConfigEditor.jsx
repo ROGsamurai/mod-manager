@@ -28,7 +28,7 @@ export default function ConfigEditor({ notify }) {
 
   const filteredSections = config?.sections?.filter(s =>
     !search || s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.entries.some(e => e.key.toLowerCase().includes(search.toLowerCase()) || e.description.toLowerCase().includes(search.toLowerCase()))
+    s.entries.some(e => e.key.toLowerCase().includes(search.toLowerCase()) || (e.description || '').toLowerCase().includes(search.toLowerCase()))
   ) || [];
 
   return (
@@ -86,7 +86,7 @@ export default function ConfigEditor({ notify }) {
                     [{section.name}]
                   </div>
                   {section.entries.filter(e =>
-                    !search || e.key.toLowerCase().includes(search.toLowerCase()) || e.description.toLowerCase().includes(search.toLowerCase())
+                    !search || e.key.toLowerCase().includes(search.toLowerCase()) || (e.description || '').toLowerCase().includes(search.toLowerCase())
                   ).map(entry => (
                     <ConfigEntry key={`${section.name}.${entry.key}`} entry={entry} section={section.name}
                       saving={saving === `${section.name}.${entry.key}`} onSave={saveValue} />
@@ -105,6 +105,7 @@ export default function ConfigEditor({ notify }) {
 }
 
 function ConfigEntry({ entry, section, saving, onSave }) {
+  const { t } = useI18n();
   const [val, setVal] = useState(entry.value);
   const changed = val !== entry.value;
 

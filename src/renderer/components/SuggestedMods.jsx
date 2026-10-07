@@ -34,7 +34,8 @@ const BUNDLES = [
         ] },
 
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
-      { name: 'Phone - Overhaul', role: 'required', id: 685 },
+      { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
+      { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
       { name: 'TextureReplacer', role: 'required', id: 69, note: 'Required for Shop Textures.' },
@@ -43,7 +44,7 @@ const BUNDLES = [
       { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },
       { name: 'Enhanced Binder', role: 'recommended', id: 1116 },
       { name: 'EPL Demand', role: 'recommended', id: 1084 },
-      { name: 'Grading Overhaul', role: 'recommended', id: 612 },
+      { name: 'CardGrade Overhaul', role: 'recommended', id: 1728 },
       { name: 'RTCGO Custom TV', role: 'recommended', id: 895 },
     ],
   },
@@ -65,10 +66,10 @@ const BUNDLES = [
         ] },
 
       // Pocket's requirements differ from the main Pokemon mod: no
-      // TextureReplacer, Collection Tracker is required outright, and
-      // and Collection Tracker is required outright.
+      // TextureReplacer, and Collection Tracker is required outright.
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
-      { name: 'Phone - Overhaul', role: 'required', id: 685 },
+      { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
+      { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
       { name: 'Collection Tracker', role: 'required', id: 867 },
@@ -76,7 +77,7 @@ const BUNDLES = [
       { name: 'EPL Card Animator', role: 'recommended', id: 1100, note: 'Recommended for the Animated Cards.' },
       { name: 'Enhanced Binder', role: 'recommended', id: 1116 },
       { name: 'EPL Demand', role: 'recommended', id: 1084 },
-      { name: 'Grading Overhaul', role: 'recommended', id: 612 },
+      { name: 'CardGrade Overhaul', role: 'recommended', id: 1728 },
       { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },
       { name: 'RTCGO Custom TV', role: 'recommended', id: 895 },
     ],

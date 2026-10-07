@@ -66,12 +66,22 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
 
   const sorted = useMemo(() => {
     if (!sortCol) return filtered;
+    if (sortCol === 'update') {
+      // Mods with an update first (or last, when reversed), then by name, so
+      // the ones that need attention sit together at the top of each group.
+      const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+      return [...filtered].sort((a, b) => {
+        const d = (updates[b.id] ? 1 : 0) - (updates[a.id] ? 1 : 0);
+        if (d) return sortDir === 'asc' ? d : -d;
+        return byName(a, b);
+      });
+    }
     return [...filtered].sort((a, b) => {
       let av = a[sortCol] ?? '', bv = b[sortCol] ?? '';
       if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
       return sortDir === 'asc' ? (av < bv ? -1 : 1) : (av > bv ? -1 : 1);
     });
-  }, [filtered, sortCol, sortDir]);
+  }, [filtered, sortCol, sortDir, updates]);
 
   const doSort = c => { if (sortCol === c) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(c); setSortDir('asc'); } };
   const arrow = c => sortCol === c ? (sortDir === 'asc' ? ' \u25B2' : ' \u25BC') : ' \u21C5';
@@ -235,7 +245,7 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
         <div style={{ width: 95 }}>{t('STATUS')}</div>
         <div style={{ flex: 2, minWidth: 180, cursor: 'pointer' }} onClick={() => doSort('name')}>{t('NAME')}{arrow('name')}</div>
         <div style={{ width: 90, cursor: 'pointer' }} onClick={() => doSort('version')}>{t('VERSION')}{arrow('version')}</div>
-        <div style={{ width: 134, marginLeft: 28 }}>{t('UPDATE')}</div>
+        <div style={{ width: 134, marginLeft: 28, cursor: 'pointer' }} onClick={() => doSort('update')}>{t('UPDATE')}{arrow('update')}</div>
         <div style={{ width: 60, textAlign: 'center' }}>{t('FILES')}</div>
         <div style={{ width: 60, textAlign: 'center', cursor: 'help' }} title={t('Warnings: missing dependencies or file conflicts with another mod. Hover the icon for details.')}>{t('ISSUES')}</div>
         <div style={{ width: 100, textAlign: 'center' }}>{t('ACTIONS')}</div>

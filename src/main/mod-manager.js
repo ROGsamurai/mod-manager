@@ -22,8 +22,6 @@ const TARGETS = {
 const CORE_MOD_NAMES = [
   'bepinex', 'bepinex with configuration manager', 'configurationmanager',
   'enhancedprefabloader', 'enhanced prefab loader',
-  'phone overhaul', 'phone - overhaul',
-  'grading overhaul',
   'expansion', 'expansions',
   'pokemon plushies', 'pokemon gameboy games', 'pokemon n64 games',
   'pokemon statues', 'custom furniture', 'custom tv',
@@ -2231,6 +2229,7 @@ class ModManager {
       'pokemon plushies', 'neo expansions', 'base expansions', 'gym expansions',
       'texturereplacer', 'collection tracker', 'enhancedprefabloader',
       'bepinex with configuration manager',
+      'qolshopos',
     ];
     const fnLower = (filename || '').toLowerCase();
     const isVerified = VERIFIED_MODS.some(v => fnLower.includes(v));
@@ -2245,6 +2244,12 @@ class ModManager {
 
     // Known safe executables that some mods legitimately bundle as tools
     const SAFE_EXES = ['ffmpeg.exe', 'yt-dlp.exe', 'deno.exe'];
+
+    // Verified tools allowed only at the exact place their mod ships them, so a
+    // generic name like qjs.exe is not trusted anywhere else.
+    // ShopOS (mod 1754): QuickJS runtime used alongside yt-dlp.
+    const SAFE_EXE_PATHS = ['bepinex/plugins/shopos/tools/qjs.exe'];
+    const isSafeExePath = lp => SAFE_EXE_PATHS.some(s => lp === s || lp.endsWith('/' + s));
 
     // System DLLs that mods should never replace
     const SYSTEM_DLLS = ['kernel32.dll','user32.dll','ntdll.dll','advapi32.dll','shell32.dll',
@@ -2290,7 +2295,7 @@ class ModManager {
       }
       // 2. Dangerous executables/scripts — BLOCKED (unless whitelisted)
       if (BLOCKED_EXT.includes(ext)) {
-        if (SAFE_EXES.includes(name)) {
+        if (SAFE_EXES.includes(name) || isSafeExePath(p.toLowerCase())) {
           // Known safe tool — just warn
           warnings.push(`Contains bundled tool: "${name}" — known safe executable`);
         } else {
@@ -2684,9 +2689,18 @@ class ModManager {
     const parsedKey = this._baseName(parsedName);
     let removedOldFiles = 0;
     let previousWasUntracked = false;
+    // The group the old version sat in, and where in it, so the new version
+    // goes back to the same spot instead of dropping to Ungrouped.
+    let keptGroup = null;
+    const replacedIds = [];
     for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
       if (m.filename === filename || mBase === baseKey || mBase === parsedKey) {
+        replacedIds.push(oldId);
+        if (!keptGroup) {
+          const g = this.getModGroups().find(gr => gr.modIds.includes(oldId));
+          if (g) keptGroup = { groupId: g.id, index: g.modIds.indexOf(oldId) };
+        }
         try {
           // Report as its own phase so the UI can show "Removing old version"
           // instead of a progress bar that just says "Installing" throughout —
@@ -2809,6 +2823,7 @@ class ModManager {
           const mod = { id, name, version, nexusId, filename, targetKey, installTarget: targetKey, targetLabel: target.label, extractTo, enabled: true, core: this._isKnownCore(name) || loosePrefab, installedAt: new Date().toISOString(), archiveMtime, files: looseDllFiles, fileCount: looseDllFiles.length, looseDlls: !requiredFolder };
           this.mods.set(id, mod);
           this._saveDb();
+          this._restoreGroupAfterUpdate(id, replacedIds, keptGroup);
           this._autoAssignGroupByName(id, name, looseDllFiles);
           const dupes = await this._sweepDuplicatePluginDlls(mod);
           if (this.getDeleteAfterInstall()) {
@@ -2912,6 +2927,7 @@ class ModManager {
     const mod = { id, name, version, nexusId, filename, targetKey, installTarget, targetLabel: TARGETS[installTarget].label, extractTo, enabled: true, core: this._isKnownCore(name) || hasPrefabloader, installedAt: new Date().toISOString(), archiveMtime, files, fileCount: files.length };
     this.mods.set(id, mod);
     this._saveDb();
+    this._restoreGroupAfterUpdate(id, replacedIds, keptGroup);
     this._autoAssignGroupByName(id, name, files);
 
     // Delete zip from staging after install if setting is enabled
@@ -4225,7 +4241,7 @@ class ModManager {
       'neo expansions': ['enhancedprefabloader'],
       'gym expansions': ['enhancedprefabloader'],
       'pokemon expansions': ['enhancedprefabloader'],
-      'pokemon accessories': ['enhancedprefabloader', 'phone overhaul'],
+      'pokemon accessories': ['enhancedprefabloader'],
       'pokemon figurines': ['enhancedprefabloader'],
       'pokemon plushies': ['enhancedprefabloader'],
       'pokemon gameboy games': ['enhancedprefabloader'],
@@ -4235,14 +4251,14 @@ class ModManager {
       'rtcgo shop textures': ['texturereplacer'],
       'rtcgo custom tv': ['enhancedprefabloader'],
       'rtcgo custom furniture': ['enhancedprefabloader'],
-      'base set theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'jungle theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'fossil theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'base set 2 theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'team rocket theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'gym heroes theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'gym challenge theme decks': ['enhancedprefabloader', 'phone overhaul'],
-      'pokemon adventures manga': ['enhancedprefabloader', 'phone overhaul'],
+      'base set theme decks': ['enhancedprefabloader'],
+      'jungle theme decks': ['enhancedprefabloader'],
+      'fossil theme decks': ['enhancedprefabloader'],
+      'base set 2 theme decks': ['enhancedprefabloader'],
+      'team rocket theme decks': ['enhancedprefabloader'],
+      'gym heroes theme decks': ['enhancedprefabloader'],
+      'gym challenge theme decks': ['enhancedprefabloader'],
+      'pokemon adventures manga': ['enhancedprefabloader'],
       'endgame overhaul': ['enhancedprefabloader'],
       'artexpander': ['texturereplacer'],
       'schwarz shelves set': ['enhancedprefabloader'],
@@ -4253,7 +4269,6 @@ class ModManager {
     const DEP_NAMES = {
       'enhancedprefabloader': 'Enhanced Prefab Loader',
       'holographic overhaul': 'Holographic Overhaul',
-      'phone overhaul': 'Phone Overhaul',
       'texturereplacer': 'TextureReplacer',
     };
 
@@ -4302,14 +4317,20 @@ class ModManager {
       }
     }
 
-    // Auto-detect: any mod with Phone - Overhaul/ in its files needs Phone Overhaul
-    const hasPhoneOverhaul = [...this.mods.values()].some(m => ident(m.name).includes('phoneoverhaul'));
-    if (!hasPhoneOverhaul) {
-      for (const mod of this.mods.values()) {
-        if (ident(mod.name).includes('phoneoverhaul')) continue;
-        if (warnings.some(w => w.modId === mod.id && w.missingDep === 'Phone Overhaul')) continue;
-        if (mod.files && mod.files.some(f => /phone\s*-\s*overhaul[/\\]/i.test(f))) {
-          warnings.push({ modId: mod.id, modName: mod.name, missingDep: 'Phone Overhaul' });
+    // Shop apps (Pokemon Shop App, Pokemon Pocket Shop App, the Pokemon and
+    // Yu-Gi-Oh Shop Phone Apps) run on QOL ShopOS and Purchase Overhaul, and
+    // need both. Matched by name so every shop app is covered.
+    const SHOP_APP_DEPS = [
+      { key: 'shopos', label: 'QOL ShopOS' },
+      { key: 'purchaseoverhaul', label: 'Purchase Overhaul' },
+    ];
+    const isShopApp = m => /shop(phone)?app/.test(ident(m.name));
+    for (const mod of this.mods.values()) {
+      if (!isShopApp(mod)) continue;
+      for (const dep of SHOP_APP_DEPS) {
+        const present = [...this.mods.values()].some(m => ident(m.name).includes(dep.key));
+        if (!present && !warnings.some(w => w.modId === mod.id && w.missingDep === dep.label)) {
+          warnings.push({ modId: mod.id, modName: mod.name, missingDep: dep.label });
         }
       }
     }
@@ -5308,9 +5329,15 @@ class ModManager {
       'enhancedprefabloader',
       'enhanced prefab loader api',
       'enhancedprefabloader api',
-      'phone overhaul',
-      'phone - overhaul',
-      'grading overhaul',
+      'qol shopos',
+      'qolshopos',
+      'shopos',
+      'qol shopos - the shop tablet',
+      'purchase overhaul',
+      'purchaseoverhaul',
+      'purchase overhaul - every shop in one app',
+      'cardgrade overhaul',
+      'cardgradeoverhaul',
       'holographic overhaul',
       'rtcgo holographics',
       'collection tracker',
@@ -5377,6 +5404,30 @@ class ModManager {
     let target = groups.find(g => g.name === rule.groupName);
     if (!target) target = this.createModGroup(rule.groupName);
     this.setModGroup(modId, target.id);
+  }
+
+  /**
+   * After an update replaced one or more old entries, drop their now-dead ids
+   * from every group and put the new id where the old one was. Runs before
+   * auto-grouping, which skips a mod that is already in a group, so a mod the
+   * user placed by hand stays where they put it.
+   */
+  _restoreGroupAfterUpdate(newId, replacedIds, keptGroup) {
+    if (!replacedIds.length && !keptGroup) return;
+    const groups = this.getModGroups();
+    const dead = new Set(replacedIds.filter(rid => rid !== newId && !this.mods.has(rid)));
+    let changed = false;
+    for (const g of groups) {
+      const kept = g.modIds.filter(mid => !dead.has(mid) && mid !== newId);
+      if (kept.length !== g.modIds.length) { g.modIds = kept; changed = true; }
+    }
+    const target = keptGroup && groups.find(g => g.id === keptGroup.groupId);
+    if (target) {
+      const at = Math.min(Math.max(keptGroup.index, 0), target.modIds.length);
+      target.modIds.splice(at, 0, newId);
+      changed = true;
+    }
+    if (changed) store.set('modGroups', groups);
   }
 
   getModGroups() { return store.get('modGroups', []); }

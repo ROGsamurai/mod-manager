@@ -3,6 +3,17 @@ CHANGED
 - Holographic Overhaul is no longer treated as a requirement. Card expansions no longer list it as a dependency, and no mod is told it is missing — card foils are an enhancement, not something a set needs to work
 - Getting Started now recommends RTCGO Holographics in both the Pokemon and Pokemon Pocket bundles
 - EnhancedPrefabLoader API is placed in the Main Core Mods group, and so is a version of Enhanced Prefab Loader whose name carries a tag in brackets, such as "EnhancedPrefabLoader (1.0Classic)". Group matching was exact, so the tag kept it out
+- Getting Started now recommends CardGrade Overhaul in place of Grading Overhaul in both bundles. Grading Overhaul is no longer auto-locked as a core mod or placed in Main Core Mods; CardGrade Overhaul takes its place in that group
+- ShopOS installs. Its bundled qjs.exe was blocked as an executable; it is now allowed, but only at the exact path ShopOS ships it, so the same file name elsewhere is still blocked
+- QOL ShopOS and Purchase Overhaul are required in both Getting Started bundles. Every shop app now lists both as dependencies, and the Installed Mods list flags a shop app when either is missing. Both are placed in Main Core Mods
+
+ADDED
+- Updating a mod keeps it in its group, in the same position. The update removes the old version and installs the new one as a fresh entry, and the fresh entry used to land in Ungrouped (or wherever auto-grouping put it)
+- Installed Mods can be sorted by the UPDATE column. Mods with an update available come first, within each group, then the rest by name; click again to reverse
+
+FIXED
+- Config Editor: typing into any text setting blanked the whole window until restart. The Save button that appears on an edit referenced the translation helper without loading it, which crashed the page
+- Config Editor: searching no longer crashes on a setting that has no description
 
 Version 2.0.2
 FIXED
