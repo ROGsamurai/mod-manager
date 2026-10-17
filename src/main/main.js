@@ -254,6 +254,10 @@ ipcMain.handle('game:set-path', (_, p) => {
   }
   catch (e) { return { success: false, error: e.message }; }
 });
+ipcMain.handle('game:platform', () => {
+  try { return gameDetector.getPlatform(modManager.gamePath); }
+  catch { return { platform: 'unknown', betaKey: '' }; }
+});
 ipcMain.handle('game:launch', () => {
   try { return { success: true, ...gameDetector.launchGame(modManager.gamePath) }; }
   catch (e) { return { success: false, error: e.message }; }

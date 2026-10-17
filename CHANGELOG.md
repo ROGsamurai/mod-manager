@@ -2,6 +2,17 @@ Unreleased
 CHANGED
 - MangaMaker installs. Its bundled 7z.exe and ReadingCornerPicker.ps1 were blocked as executables; both are now allowed, but only at the exact paths MangaMaker ships them (BepInEx/plugins/ReadingCorner/Tools/), so the same files anywhere else are still blocked
 
+ADDED
+- Installing Enhanced Prefab Loader now asks first and says which game version the build is for: the plain build is for the New Render version (Xbox Game Pass, and the New Render branch on Steam), and the "(1.0classic)" build is for Steam's default branch. It also says whether the build matches your game — Xbox Game Pass, Steam default branch, or the Steam beta branch you have selected — and asks you to confirm when it does not
+- Both Enhanced Prefab Loader builds now list Enhanced Prefab Loader API as a dependency, and Installed Mods flags either build when the API is missing. The API no longer counts as Enhanced Prefab Loader itself when checking other mods' dependencies
+
+FIXED
+- Getting Started now shows EnhancedPrefabLoader (1.0classic) as installed. A bracketed tag on an installed mod's name kept it from matching the listed mod
+- The two Enhanced Prefab Loader builds show as separate mods. The "(1.0classic)" tag used to be dropped as a variant marker, so the Steam default-branch build was folded under the New Render build in Downloaded Mods as an older version of it. They install the same files, so installing either one still replaces the other
+- Translations reviewed in all nine languages. Every on-screen string is now translated, including the Enhanced Prefab Loader install popup and the 24 others that were showing in English. Mistranslations were fixed — for example On/Off shown as "Yes/No", Japanese and Korean "Current Version" reading as "Latest Version", and German "Installing" reading as "Installed" — along with sentences that had lost half their meaning (the BepInEx reinstall warning no longer drops "and need to be reinstalled"), European Portuguese wording in the Brazilian translation, tab names that pointed at tabs that no longer exist, and inconsistent terms within each language
+- Mod names are no longer translated. They are proper nouns and now show exactly as the mod names itself in every language. The loose name matching behind the translations gave different mods the same translated name (Enhanced Prefab Loader, its API and the 1.0classic build all showed as one name in Spanish), and renaming a mod pre-filled the translated name, which then replaced the real one
+- The duplicate-DLL cleanup message read "Removed 3 duplicate DLLs removed"
+
 Version 2.0.4
 NOTE
 - An early build of 2.0.3 could remove other mods from the same Nexus page when one of them was updated. Both builds were labelled 2.0.3, so replace any copy of 2.0.3 with this version. Mods it removed can be added again from Downloaded Mods; they install as separate entries

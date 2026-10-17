@@ -26,6 +26,33 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   // ✕ click feels instant instead of waiting for the disk + refresh round trip.
   const [removing, setRemoving] = useState(new Set());
 
+  // Enhanced Prefab Loader ships two builds that only work on their own game
+  // version: the plain one for the New Render build (Xbox Game Pass, Steam's
+  // New Render beta) and "(1.0classic)" for Steam's default branch. Installing
+  // either one asks first, saying which game it is for and whether it matches
+  // the game folder that is set.
+  const [eplPrompt, setEplPrompt] = useState(null); // { filename, variant, version, platform, resolve }
+  const eplInfo = (filename) => {
+    let name = '', version = '';
+    for (const f of staged) {
+      if (f.filename === filename) { name = f.parsedName || ''; version = f.parsedVersion || ''; break; }
+      const ov = (f.olderVersions || []).find(o => o.filename === filename);
+      if (ov) { name = f.parsedName || ''; version = ov.version || ''; break; }
+    }
+    const key = String(name).replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (key !== 'enhancedprefabloader') return null;
+    const classic = /classic/i.test(filename) || /classic/i.test(name);
+    return { variant: classic ? 'classic' : 'newrender', version };
+  };
+  const confirmEpl = async (filename) => {
+    const info = eplInfo(filename);
+    if (!info) return true;
+    let platform = { platform: 'unknown', betaKey: '' };
+    try { platform = (await window.api.getGamePlatform()) || platform; } catch {}
+    return new Promise(resolve => setEplPrompt({ filename, ...info, platform, resolve }));
+  };
+  const closeEpl = (ok) => { if (eplPrompt) eplPrompt.resolve(ok); setEplPrompt(null); };
+
   const VERIFIED_PATTERNS = ['fast pack opening','fast opening pack','fastpackopening',
     'rtcgo custom furniture','custom furniture','furniture_prefabloader',
     'base set theme decks','jungle theme decks','fossil theme decks',
@@ -102,6 +129,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   // Install / update / downgrade all take the same path now: the backend always
   // removes the previously installed copy's files before extracting the new one.
   const doInstall = async (filename) => {
+    if (!(await confirmEpl(filename))) return;
     // No target argument: installMod detects the destination from the archive
     // itself. The renderer's detected value is display only.
     await onInstall(filename, null, names[filename] || filename.replace(/\.(zip|rar|7z)$/i, ''));
@@ -416,6 +444,55 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
           </div>
         )}
       </div>
+      {eplPrompt && (() => {
+        const p = eplPrompt;
+        const isNew = p.variant === 'newrender';
+        const plat = p.platform?.platform;
+        const beta = p.platform?.betaKey || '';
+        // true = this build matches the game, false = wrong build, null = can't tell
+        const matches = plat === 'gamepass' ? isNew
+          : plat === 'steam' && !beta ? !isNew
+          : null;
+        const gameLine = plat === 'gamepass' ? t('Your game: Xbox Game Pass')
+          : plat === 'steam' ? (beta ? `${t('Your game: Steam, beta branch')} "${beta}"` : t('Your game: Steam, default branch'))
+          : t('Your game: not detected');
+        return (
+          <div onClick={() => closeEpl(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+            <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true"
+              style={{ width: 'min(520px, 100%)', background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.45)' }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>
+                {t('Enhanced Prefab Loader')} — {isNew ? t('New Render build') : t('1.0 Classic build')}{p.version ? ` (v${p.version})` : ''}
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 10, lineHeight: 1.55 }}>
+                {isNew
+                  ? t('This build is for the New Render version of the game: Xbox Game Pass, and the New Render branch on Steam. It does not work on Steam\'s default branch, which needs EnhancedPrefabLoader (1.0classic).')
+                  : t('This build is for Steam\'s default branch. Xbox Game Pass and the New Render branch on Steam need the other build, EnhancedPrefabLoader without the 1.0classic tag.')}
+              </div>
+              <div style={{ fontSize: 13.5, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
+                {t('Both builds need Enhanced Prefab Loader API. Only one build can be installed: installing this one replaces the other if it is installed.')}
+              </div>
+              <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 'var(--radius)', fontSize: 13.5,
+                background: 'var(--bg-base)', border: `1px solid ${matches === false ? 'var(--red-border)' : matches ? 'var(--green-border)' : 'var(--border)'}` }}>
+                <div style={{ fontWeight: 600, color: 'var(--text)' }}>{gameLine}</div>
+                <div style={{ marginTop: 3, color: matches === false ? 'var(--red-bright)' : matches ? 'var(--green-bright)' : 'var(--text-3)' }}>
+                  {matches === true ? t('This is the right build for your game.')
+                    : matches === false ? t('This is the wrong build for your game. Download the other Enhanced Prefab Loader file from its Nexus page.')
+                    : plat === 'steam' ? t('If this is the New Render branch, use the New Render build. Otherwise use 1.0 Classic.')
+                    : t('Check which version of the game you play before installing.')}
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+                <button className="btn btn-ghost" onClick={() => closeEpl(false)}>{t('Cancel')}</button>
+                <button className={`btn ${matches === false ? 'btn-danger' : 'btn-accent'}`} onClick={() => closeEpl(true)} autoFocus={matches !== false}>
+                  {matches === false ? t('Install anyway') : t('Install')}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

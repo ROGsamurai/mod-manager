@@ -190,7 +190,7 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
                     const r = await window.api.removeDuplicatePlugins();
                     setHealthCheck(await window.api.bepinexHealthCheck());
                     setHealthBusy(false);
-                    if (r?.success) notify(`${t('Removed')} ${r.removed.length} ${t('duplicate DLLs removed')}`, 'success');
+                    if (r?.success) notify(`${r.removed.length} ${t('duplicate DLLs removed')}`, 'success');
                     else notify(r?.error || t('Could not remove duplicates'), 'error');
                   }}>{t('Remove duplicates')}</button>
                 )}

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   getGamePath: () => ipcRenderer.invoke('game:get-path'),
   setGamePath: (p) => ipcRenderer.invoke('game:set-path', p),
   launchGame: () => ipcRenderer.invoke('game:launch'),
+  getGamePlatform: () => ipcRenderer.invoke('game:platform'),
   getBepInExStatus: () => ipcRenderer.invoke('game:bepinex'),
   bepinexHealthCheck: () => ipcRenderer.invoke('game:bepinex-health'),
   removeDuplicatePlugins: () => ipcRenderer.invoke('game:remove-duplicate-plugins'),

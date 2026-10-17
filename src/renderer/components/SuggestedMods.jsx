@@ -36,7 +36,7 @@ const BUNDLES = [
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
       { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
       { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
-      { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
+      { name: 'Enhanced Prefab Loader', role: 'required', id: 496, note: 'Two builds: the plain one for Xbox Game Pass / New Render, (1.0classic) for Steam\'s default branch. Either needs Enhanced Prefab Loader API.' },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
       { name: 'TextureReplacer', role: 'required', id: 69, note: 'Required for Shop Textures.' },
       { name: 'Collection Tracker', role: 'required', id: 867, note: 'Required for Promo Cards.' },
@@ -70,7 +70,7 @@ const BUNDLES = [
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
       { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
       { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
-      { name: 'Enhanced Prefab Loader', role: 'required', id: 496 },
+      { name: 'Enhanced Prefab Loader', role: 'required', id: 496, note: 'Two builds: the plain one for Xbox Game Pass / New Render, (1.0classic) for Steam\'s default branch. Either needs Enhanced Prefab Loader API.' },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
       { name: 'Collection Tracker', role: 'required', id: 867 },
 
@@ -99,7 +99,10 @@ export default function SuggestedMods({ mods = [] }) {
   // Closed by default: this is reference material, not the first thing to read.
   const [open, setOpen] = useState(null);
 
-  const installedNames = new Set(mods.map(m => ident(m.name)));
+  // Also index each installed name without a bracketed tag, so a variant such
+  // as "EnhancedPrefabLoader (1.0classic)" counts as Enhanced Prefab Loader.
+  const untag = v => String(v || '').replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ');
+  const installedNames = new Set(mods.flatMap(m => [ident(m.name), ident(untag(m.name))]));
   const isInstalled = name => installedNames.has(ident(name));
   // An entry counts as installed when its mod is; for the pack, when every one
   // of its main files is.

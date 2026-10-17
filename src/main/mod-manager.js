@@ -1299,6 +1299,12 @@ class ModManager {
     return { ok: checks.every(c => c.status !== 'missing'), checks };
   }
 
+  /** True for either Enhanced Prefab Loader build (not the API). */
+  _isEplBuild(name) {
+    const key = String(name || '').replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return key === 'enhancedprefabloader';
+  }
+
   /** Strip trailing version numbers from a name for fuzzy matching */
   _baseName(name) {
     return (name || '')
@@ -1307,7 +1313,10 @@ class ModManager {
       // Strip a trailing variant tag in ()/[] first — "(HQ Base Game Sprites)",
       // "[Optional]" — so different downloads of the same mod collapse to one
       // base key for overwrite/dedup detection.
-      .replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, '')
+      // A tag naming a different GAME build is kept, though: "(1.0classic)"
+      // marks the Enhanced Prefab Loader for Steam's default branch, which is a
+      // separate download from the New Render build, not a variant of it.
+      .replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, tags => (/classic|new\s*render/i.test(tags) ? tags : ''))
       // Then strip a trailing version — but ONLY a dotted number ("1.1.6", "3.3")
       // or a 'v'-prefixed one ("v2", "v1.1.6"). A bare trailing integer must be
       // kept: it is part of the name, not a version — "Pokemon Expansions -
@@ -2700,9 +2709,14 @@ class ModManager {
     // goes back to the same spot instead of dropping to Ungrouped.
     let keptGroup = null;
     const replacedIds = [];
+    // The two Enhanced Prefab Loader builds (New Render and 1.0 Classic) are
+    // separate mods but install the same files to the same folder, so only one
+    // can be installed: installing either replaces the other.
+    const eplBuild = (n) => this._isEplBuild(n);
+    const installingEpl = eplBuild(name);
     for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
-      if (m.filename === filename || mBase === baseKey || mBase === parsedKey) {
+      if (m.filename === filename || mBase === baseKey || mBase === parsedKey || (installingEpl && eplBuild(m.name))) {
         replacedIds.push(oldId);
         if (!keptGroup) {
           const g = this.getModGroups().find(gr => gr.modIds.includes(oldId));
@@ -4270,11 +4284,15 @@ class ModManager {
       'artexpander': ['texturereplacer'],
       'schwarz shelves set': ['enhancedprefabloader'],
       'showcase': ['enhancedprefabloader'],
+      // Both Enhanced Prefab Loader builds — New Render and "(1.0classic)" —
+      // need the API. The classic build is found by its name without the tag.
+      'enhancedprefabloader': ['enhancedprefabloader api'],
     };
 
     // Display names for dependency mods
     const DEP_NAMES = {
       'enhancedprefabloader': 'Enhanced Prefab Loader',
+      'enhancedprefabloader api': 'Enhanced Prefab Loader API',
       'holographic overhaul': 'Holographic Overhaul',
       'texturereplacer': 'TextureReplacer',
     };
@@ -4283,15 +4301,21 @@ class ModManager {
     // 'phone overhaul' entry.
     const DEPS_BY_IDENT = new Map(Object.entries(DEPENDENCIES).map(([k, v]) => [ident(k), v]));
 
+    const untagged = n => String(n || '').replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ');
+    const isApi = m => ident(m.name).includes('enhancedprefabloaderapi');
     for (const mod of this.mods.values()) {
-      const deps = DEPS_BY_IDENT.get(ident(mod.name));
+      const deps = DEPS_BY_IDENT.get(ident(mod.name)) || DEPS_BY_IDENT.get(ident(untagged(mod.name)));
       if (!deps) continue;
 
       for (const dep of deps) {
         // Check if dependency is installed (by name match or DLL match)
+        const depNorm = ident(dep);
         const depInstalled = [...this.mods.values()].some(m => {
+          if (m === mod) return false;
+          // The API and the loader share a name prefix; neither stands in for the other.
+          if (depNorm === 'enhancedprefabloaderapi') return isApi(m);
+          if (depNorm === 'enhancedprefabloader' && isApi(m)) return false;
           const mLower = ident(m.name);
-          const depNorm = ident(dep);
           return mLower.includes(depNorm) || depNorm.includes(mLower);
         });
 
@@ -4306,7 +4330,7 @@ class ModManager {
     }
 
     // Auto-detect: any mod with _prefabloader in its files needs Enhanced Prefab Loader
-    const hasEPL = [...this.mods.values()].some(m => ident(m.name).includes('enhancedprefabloader'));
+    const hasEPL = [...this.mods.values()].some(m => ident(m.name).includes('enhancedprefabloader') && !isApi(m));
     if (!hasEPL) {
       for (const mod of this.mods.values()) {
         // Skip if this mod IS the prefab loader

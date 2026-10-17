@@ -229,6 +229,34 @@ class GameDetector {
     return out;
   }
 
+  /**
+   * Which store/branch the game folder belongs to, for telling users which
+   * Enhanced Prefab Loader build they need.
+   *   gamepass — Xbox Game Pass (runs the New Render build)
+   *   steam    — Steam; betaKey is the selected beta branch, '' for the default
+   *   unknown  — anything else (manual copy, unrecognised layout)
+   */
+  getPlatform(gamePath) {
+    if (!gamePath) return { platform: 'unknown', betaKey: '' };
+    const parent = path.dirname(gamePath);
+    const has = p => { try { return fs.existsSync(p); } catch { return false; } };
+    if (has(path.join(gamePath, 'gamelaunchhelper.exe')) || has(path.join(parent, 'gamelaunchhelper.exe'))
+        || has(path.join(gamePath, 'MicrosoftGame.config')) || has(path.join(parent, 'MicrosoftGame.config'))) {
+      return { platform: 'gamepass', betaKey: '' };
+    }
+    const m = /^(.*[\\/]steamapps)[\\/]common[\\/]/i.exec(gamePath + path.sep);
+    if (m) {
+      let betaKey = '';
+      try {
+        const acf = fs.readFileSync(path.join(m[1], `appmanifest_${STEAM_APP_ID}.acf`), 'utf8');
+        const b = /"BetaKey"\s+"([^"]*)"/i.exec(acf);
+        if (b) betaKey = b[1].trim();
+      } catch { /* manifest unreadable — treat as the default branch */ }
+      return { platform: 'steam', betaKey };
+    }
+    return { platform: 'unknown', betaKey: '' };
+  }
+
   launchGame(gamePath) {
     const { shell } = require('electron');
     const launchSteam = () => { shell.openExternal(`steam://rungameid/${STEAM_APP_ID}`); };
