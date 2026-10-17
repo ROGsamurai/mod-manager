@@ -1,3 +1,7 @@
+Unreleased
+CHANGED
+- MangaMaker installs. Its bundled 7z.exe and ReadingCornerPicker.ps1 were blocked as executables; both are now allowed, but only at the exact paths MangaMaker ships them (BepInEx/plugins/ReadingCorner/Tools/), so the same files anywhere else are still blocked
+
 Version 2.0.4
 NOTE
 - An early build of 2.0.3 could remove other mods from the same Nexus page when one of them was updated. Both builds were labelled 2.0.3, so replace any copy of 2.0.3 with this version. Mods it removed can be added again from Downloaded Mods; they install as separate entries

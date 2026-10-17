@@ -2230,6 +2230,7 @@ class ModManager {
       'texturereplacer', 'collection tracker', 'enhancedprefabloader',
       'bepinex with configuration manager',
       'qolshopos',
+      'mangamaker',
     ];
     const fnLower = (filename || '').toLowerCase();
     const isVerified = VERIFIED_MODS.some(v => fnLower.includes(v));
@@ -2248,7 +2249,13 @@ class ModManager {
     // Verified tools allowed only at the exact place their mod ships them, so a
     // generic name like qjs.exe is not trusted anywhere else.
     // ShopOS (mod 1754): QuickJS runtime used alongside yt-dlp.
-    const SAFE_EXE_PATHS = ['bepinex/plugins/shopos/tools/qjs.exe'];
+    // MangaMaker / ReadingCorner (mod 1883): 7-Zip for reading comic archives,
+    // and the PowerShell file picker it opens to choose a book.
+    const SAFE_EXE_PATHS = [
+      'bepinex/plugins/shopos/tools/qjs.exe',
+      'bepinex/plugins/readingcorner/tools/7z.exe',
+      'bepinex/plugins/readingcorner/tools/readingcornerpicker.ps1',
+    ];
     const isSafeExePath = lp => SAFE_EXE_PATHS.some(s => lp === s || lp.endsWith('/' + s));
 
     // System DLLs that mods should never replace
