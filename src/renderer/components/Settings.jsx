@@ -97,7 +97,9 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
           <span style={{ fontSize: 15, fontWeight: 600 }}>{bepinex.installed ? t('BepInEx Installed') : t('BepInEx Not Installed')}</span>
         </div>
         <div style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.7, marginBottom: 12 }}>
-          {bepinex.installed ? t('BepInEx is ready. Plugin mods should extract to "BepInEx / plugins".') : bepinex.reason}
+          {bepinex.installed ? t('BepInEx is ready. Plugin mods should extract to "BepInEx / plugins".')
+            : !bepinex.gameFound ? t('BepInEx can be checked once the game folder is correct.')
+            : t(bepinex.reason)}
         </div>
         {/* Live duplicate check — same treatment as the game and BepInEx rows,
             because a duplicate plugin DLL makes a mod look installed and enabled

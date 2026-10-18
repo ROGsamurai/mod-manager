@@ -354,6 +354,9 @@ ipcMain.handle('updates:check', async (_e, force) => {
 
 ipcMain.handle('mods:uninstall', async (event, id) => {
   try {
+    // Removing deletes files relative to the game folder; with the wrong folder
+    // set it would delete from the wrong place, so refuse until it is fixed.
+    modManager._requireGameFolder('remove mods');
     await modManager.uninstallMod(id, (done, total) => {
       try { event.sender.send('mods:toggle-progress', { id, done, total }); } catch {}
     });

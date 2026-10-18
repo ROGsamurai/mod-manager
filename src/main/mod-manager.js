@@ -80,7 +80,12 @@ class ModManager {
   _findKnownModByName(name) {
     if (!name) return null;
     const lower = name.toLowerCase();
-    return this._getKnownModsDB().find(k => k.name.toLowerCase() === lower) || null;
+    const db = this._getKnownModsDB();
+    const hit = db.find(k => k.name.toLowerCase() === lower);
+    if (hit) return hit;
+    // A build-tagged name ("TextureReplacer (Newrender Version)") is still that mod.
+    const untagged = lower.replace(/\s*[([][^()[\]]*[)\]]\s*$/, '').trim();
+    return untagged !== lower ? (db.find(k => k.name.toLowerCase() === untagged) || null) : null;
   }
 
   /**
@@ -1092,6 +1097,17 @@ class ModManager {
     }
   }
 
+  /**
+   * Refuse to touch the game folder when it isn't the game. Installing already
+   * checked this; enabling, disabling and removing did not, so with the wrong
+   * folder set they moved and deleted files relative to a folder the mods were
+   * never installed in.
+   */
+  _requireGameFolder(action) {
+    if (this.isGameExePresent()) return;
+    throw new Error(`Cannot ${action}: "${GAME_EXE}" was not found in "${this.gamePath || '(no folder set)'}". Set the game location in Settings first.`);
+  }
+
   getBepInExStatus() {
     if (!this.gamePath) return { installed: false, gameFound: false, reason: 'Game path not set.' };
     // Verify the game itself first — a wrong folder makes every later check and
@@ -1105,7 +1121,7 @@ class ModManager {
         reason: `"${GAME_EXE}" was not found in the selected folder. Point the game location at the folder containing it (for Xbox Game Pass that is the "Content" folder), or mods will install where the game cannot load them.`,
       };
     }
-    if (!this.isBepInExInstalled()) return { installed: false, gameFound: true, reason: 'BepInEx not found. Download it and install with Game Root target.', ...this._duplicateStatus() };
+    if (!this.isBepInExInstalled()) return { installed: false, gameFound: true, reason: 'BepInEx was not found in the game folder. Install Pre-configured BepInEx from the Getting Started tab.', ...this._duplicateStatus() };
     return { installed: true, gameFound: true, ...this._duplicateStatus() };
   }
 
@@ -1301,8 +1317,34 @@ class ModManager {
 
   /** True for either Enhanced Prefab Loader build (not the API). */
   _isEplBuild(name) {
-    const key = String(name || '').replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ').toLowerCase().replace(/[^a-z0-9]/g, '');
-    return key === 'enhancedprefabloader';
+    return this._buildFamily(name) === 'enhancedprefabloader';
+  }
+
+  /**
+   * Mods that ship one build per game version under the same mod page:
+   * Enhanced Prefab Loader (plain = New Render, "(1.0classic)" = Steam default)
+   * and TextureReplacer (plain = Steam default, "Newrender Version" = New
+   * Render). Both builds of a family install the same files, so they are
+   * separate mods that replace each other. Returns the family key or null.
+   */
+  _buildFamily(name) {
+    // Normalise first, so an entry installed under the old name shape
+    // ("TextureReplacer 1.6.7 Newrender Version") is still recognised.
+    const key = String(this._tagBuildVariant(name || '')).replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (key === 'enhancedprefabloader' || key === 'texturereplacer') ? key : null;
+  }
+
+  /**
+   * TextureReplacer's New Render download is titled "TextureReplacer 1.6.9
+   * Newrender Version", with the version in the MIDDLE of the name. Parsed
+   * as-is that gave the name "TextureReplacer 1.6.9 Newrender Version", so
+   * every release looked like a different mod. Move the build tag into
+   * brackets and drop the embedded version: "TextureReplacer (Newrender
+   * Version)", which stays the same across releases.
+   */
+  _tagBuildVariant(name) {
+    const m = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+(new\s*render(?:\s+version)?)\s*$/i.exec(String(name || ''));
+    return m && m[1] ? `${m[1].trim()} (${m[2]})` : name;
   }
 
   /** Strip trailing version numbers from a name for fuzzy matching */
@@ -1579,7 +1621,7 @@ class ModManager {
       // The first numeric group is the Nexus mod id. Keeping it lets the update
       // check ask about this exact mod instead of matching on names.
       const modId = numericParts.length ? Number(numericParts[0]) : null;
-      return { name: name || base, version: version || '', modId: Number.isFinite(modId) ? modId : null };
+      return { name: this._tagBuildVariant(name || base), version: version || '', modId: Number.isFinite(modId) ? modId : null };
     }
 
     // NEW format: first peel an optional trailing variant tag in parentheses or
@@ -1634,7 +1676,7 @@ class ModManager {
     if (m) { name = m[1]; if (!version) version = m[2]; }
     name = name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
     name = name.replace(/\.(zip|rar|7z)$/i, '').trim();
-    return { name: name || base, version: version || '', modId: Number.isFinite(parsedModId) ? parsedModId : null };
+    return { name: this._tagBuildVariant(name || base), version: version || '', modId: Number.isFinite(parsedModId) ? parsedModId : null };
   }
 
   /** How many versions of the same mod to keep in the staging folder. */
@@ -2712,11 +2754,11 @@ class ModManager {
     // The two Enhanced Prefab Loader builds (New Render and 1.0 Classic) are
     // separate mods but install the same files to the same folder, so only one
     // can be installed: installing either replaces the other.
-    const eplBuild = (n) => this._isEplBuild(n);
-    const installingEpl = eplBuild(name);
+    // The same goes for TextureReplacer's two builds (see _buildFamily).
+    const family = this._buildFamily(name);
     for (const [oldId, m] of Array.from(this.mods)) {
       const mBase = this._baseName(m.name);
-      if (m.filename === filename || mBase === baseKey || mBase === parsedKey || (installingEpl && eplBuild(m.name))) {
+      if (m.filename === filename || mBase === baseKey || mBase === parsedKey || (family && this._buildFamily(m.name) === family)) {
         replacedIds.push(oldId);
         if (!keptGroup) {
           const g = this.getModGroups().find(gr => gr.modIds.includes(oldId));
@@ -3728,6 +3770,7 @@ class ModManager {
   async toggleMod(modId, onProgress, opts = {}) {
     const mod = this.mods.get(modId);
     if (!mod) throw new Error(`Mod not found: ${modId}`);
+    this._requireGameFolder(mod.enabled ? 'disable mods' : 'enable mods');
     if (mod.core && !opts.allowCore) throw new Error(`"${mod.name}" is a core mod and cannot be disabled.`);
 
     // Progress reporting: large mods (e.g. Pokemon Expansions ~906 files) take a

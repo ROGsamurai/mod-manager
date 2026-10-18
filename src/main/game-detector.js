@@ -251,6 +251,8 @@ class GameDetector {
         const acf = fs.readFileSync(path.join(m[1], `appmanifest_${STEAM_APP_ID}.acf`), 'utf8');
         const b = /"BetaKey"\s+"([^"]*)"/i.exec(acf);
         if (b) betaKey = b[1].trim();
+        // Steam writes "public" for the Default Public Version, not an empty key.
+        if (betaKey.toLowerCase() === 'public') betaKey = '';
       } catch { /* manifest unreadable — treat as the default branch */ }
       return { platform: 'steam', betaKey };
     }

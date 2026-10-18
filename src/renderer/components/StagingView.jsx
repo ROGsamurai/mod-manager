@@ -26,11 +26,10 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
   // ✕ click feels instant instead of waiting for the disk + refresh round trip.
   const [removing, setRemoving] = useState(new Set());
 
-  // Enhanced Prefab Loader ships two builds that only work on their own game
-  // version: the plain one for the New Render build (Xbox Game Pass, Steam's
-  // New Render beta) and "(1.0classic)" for Steam's default branch. Installing
-  // either one asks first, saying which game it is for and whether it matches
-  // the game folder that is set.
+  // Enhanced Prefab Loader and TextureReplacer each ship two builds that only
+  // work on their own game version: one for the New Render build (Xbox Game
+  // Pass) and one for Steam's default branch. Installing either asks first,
+  // saying which game it is for and whether it matches the game folder set.
   const [eplPrompt, setEplPrompt] = useState(null); // { filename, variant, version, platform, resolve }
   const eplInfo = (filename) => {
     let name = '', version = '';
@@ -40,9 +39,17 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
       if (ov) { name = f.parsedName || ''; version = ov.version || ''; break; }
     }
     const key = String(name).replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ').toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (key !== 'enhancedprefabloader') return null;
-    const classic = /classic/i.test(filename) || /classic/i.test(name);
-    return { variant: classic ? 'classic' : 'newrender', version };
+    // Enhanced Prefab Loader: plain = New Render, "(1.0classic)" = Steam default.
+    if (key === 'enhancedprefabloader') {
+      const classic = /classic/i.test(filename) || /classic/i.test(name);
+      return { family: 'epl', variant: classic ? 'classic' : 'newrender', version };
+    }
+    // TextureReplacer: plain = Steam default, "Newrender Version" = New Render.
+    if (key === 'texturereplacer') {
+      const nr = /new\s*render/i.test(name) || /new\s*render/i.test(filename);
+      return { family: 'tr', variant: nr ? 'newrender' : 'classic', version };
+    }
+    return null;
   };
   const confirmEpl = async (filename) => {
     const info = eplInfo(filename);
@@ -447,14 +454,31 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
       {eplPrompt && (() => {
         const p = eplPrompt;
         const isNew = p.variant === 'newrender';
+        const isTr = p.family === 'tr';
+        const title = isTr ? 'TextureReplacer' : t('Enhanced Prefab Loader');
+        const buildLabel = isNew ? t('New Render build') : isTr ? t('Standard build') : t('1.0 Classic build');
+        const body = isTr
+          ? (isNew ? t('This build is for the New Render version of the game: Xbox Game Pass, and the New Render branch on Steam. It does not work on Steam\'s default branch, which needs the standard TextureReplacer.')
+                   : t('This is the standard build, for Steam\'s default branch. Xbox Game Pass and the New Render branch on Steam need the TextureReplacer Newrender Version.'))
+          : (isNew ? t('This build is for the New Render version of the game: Xbox Game Pass, and the New Render branch on Steam. It does not work on Steam\'s default branch, which needs EnhancedPrefabLoader (1.0classic).')
+                   : t('This build is for Steam\'s default branch. Xbox Game Pass and the New Render branch on Steam need the other build, EnhancedPrefabLoader without the 1.0classic tag.'));
+        const note = isTr ? t('Only one TextureReplacer build can be installed: installing this one replaces the other if it is installed.')
+          : t('Both builds need Enhanced Prefab Loader API. Only one build can be installed: installing this one replaces the other if it is installed.');
+        const wrong = isTr ? t('This is the wrong build for your game. Download the other TextureReplacer file from its Nexus page.')
+          : t('This is the wrong build for your game. Download the other Enhanced Prefab Loader file from its Nexus page.');
+        const betaHint = isTr ? t('If this is the New Render branch, use the Newrender Version. Otherwise use the standard build.')
+          : t('If this is the New Render branch, use the New Render build. Otherwise use 1.0 Classic.');
         const plat = p.platform?.platform;
         const beta = p.platform?.betaKey || '';
         // true = this build matches the game, false = wrong build, null = can't tell
+        // Steam's default branch and its "1.0classic" beta both run the classic
+        // renderer; other betas are old game versions we can't vouch for.
+        const steamClassic = plat === 'steam' && (!beta || beta.toLowerCase() === 'public' || /classic/i.test(beta));
         const matches = plat === 'gamepass' ? isNew
-          : plat === 'steam' && !beta ? !isNew
+          : steamClassic ? !isNew
           : null;
         const gameLine = plat === 'gamepass' ? t('Your game: Xbox Game Pass')
-          : plat === 'steam' ? (beta ? `${t('Your game: Steam, beta branch')} "${beta}"` : t('Your game: Steam, default branch'))
+          : plat === 'steam' ? (beta && beta.toLowerCase() !== 'public' ? `${t('Your game: Steam, beta branch')} "${beta}"` : t('Your game: Steam, default branch'))
           : t('Your game: not detected');
         return (
           <div onClick={() => closeEpl(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 1000,
@@ -463,23 +487,21 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
               style={{ width: 'min(520px, 100%)', background: 'var(--bg-surface)', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)', padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.45)' }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>
-                {t('Enhanced Prefab Loader')} — {isNew ? t('New Render build') : t('1.0 Classic build')}{p.version ? ` (v${p.version})` : ''}
+                {title} — {buildLabel}{p.version ? ` (v${p.version})` : ''}
               </div>
               <div style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 10, lineHeight: 1.55 }}>
-                {isNew
-                  ? t('This build is for the New Render version of the game: Xbox Game Pass, and the New Render branch on Steam. It does not work on Steam\'s default branch, which needs EnhancedPrefabLoader (1.0classic).')
-                  : t('This build is for Steam\'s default branch. Xbox Game Pass and the New Render branch on Steam need the other build, EnhancedPrefabLoader without the 1.0classic tag.')}
+                {body}
               </div>
               <div style={{ fontSize: 13.5, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
-                {t('Both builds need Enhanced Prefab Loader API. Only one build can be installed: installing this one replaces the other if it is installed.')}
+                {note}
               </div>
               <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 'var(--radius)', fontSize: 13.5,
                 background: 'var(--bg-base)', border: `1px solid ${matches === false ? 'var(--red-border)' : matches ? 'var(--green-border)' : 'var(--border)'}` }}>
                 <div style={{ fontWeight: 600, color: 'var(--text)' }}>{gameLine}</div>
                 <div style={{ marginTop: 3, color: matches === false ? 'var(--red-bright)' : matches ? 'var(--green-bright)' : 'var(--text-3)' }}>
                   {matches === true ? t('This is the right build for your game.')
-                    : matches === false ? t('This is the wrong build for your game. Download the other Enhanced Prefab Loader file from its Nexus page.')
-                    : plat === 'steam' ? t('If this is the New Render branch, use the New Render build. Otherwise use 1.0 Classic.')
+                    : matches === false ? wrong
+                    : plat === 'steam' ? betaHint
                     : t('Check which version of the game you play before installing.')}
                 </div>
               </div>

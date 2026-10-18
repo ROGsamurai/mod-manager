@@ -186,8 +186,14 @@ class UpdateCheck {
       // TextureReplacer ships MAIN "TextureReplacer 1.6.7" alongside a
       // MISCELLANEOUS "TextureReplacer 1.6.7 Newrender Version". Prefer MAIN so
       // a variant never decides the version.
+      // A build tag can follow the version ("TextureReplacer 1.6.9 Newrender
+      // Version"), while the installed name carries it in brackets
+      // ("TextureReplacer (Newrender Version)"). Compare with every version
+      // number removed so each build matches its own file.
+      const noVer = n => ident(String(n).replace(/\bv?\d+(?:\.\d+)+\b/gi, ''));
       const matches = files.filter(f => ident(f.name) === ident(mod.name))
-        .concat(files.filter(f => bare(f.name) === bare(mod.name)));
+        .concat(files.filter(f => bare(f.name) === bare(mod.name)))
+        .concat(files.filter(f => noVer(f.name) === noVer(mod.name)));
       const hit = matches.find(isMain) || matches[0];
       return {
         version: String(hit?.version || node.version || ''),

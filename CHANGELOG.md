@@ -1,9 +1,12 @@
-Unreleased
+Version 2.0.5
 CHANGED
 - MangaMaker installs. Its bundled 7z.exe and ReadingCornerPicker.ps1 were blocked as executables; both are now allowed, but only at the exact paths MangaMaker ships them (BepInEx/plugins/ReadingCorner/Tools/), so the same files anywhere else are still blocked
 
 ADDED
 - Installing Enhanced Prefab Loader now asks first and says which game version the build is for: the plain build is for the New Render version (Xbox Game Pass, and the New Render branch on Steam), and the "(1.0classic)" build is for Steam's default branch. It also says whether the build matches your game — Xbox Game Pass, Steam default branch, or the Steam beta branch you have selected — and asks you to confirm when it does not
+- The Enhanced Prefab Loader popup recognises Steam's Default Public Version (Steam records it as the "public" branch, which was shown as an unknown beta) and the "1.0classic" beta, and confirms the 1.0 Classic build is right for both
+- TextureReplacer gets the same install popup. Its standard build is for Steam's default branch and its Newrender Version is for the New Render version (Xbox Game Pass); the popup says which one you are installing and whether it matches your game
+- TextureReplacer's two builds show and install as separate mods that replace each other, like Enhanced Prefab Loader's. The New Render download is titled with the version in the middle ("TextureReplacer 1.6.9 Newrender Version"), so it was read as a differently named mod on every release; it is now "TextureReplacer (Newrender Version)", and an update replaces an entry installed under the old name. The update check matches each build to its own file
 - Both Enhanced Prefab Loader builds now list Enhanced Prefab Loader API as a dependency, and Installed Mods flags either build when the API is missing. The API no longer counts as Enhanced Prefab Loader itself when checking other mods' dependencies
 
 FIXED
@@ -12,6 +15,8 @@ FIXED
 - Translations reviewed in all nine languages. Every on-screen string is now translated, including the Enhanced Prefab Loader install popup and the 24 others that were showing in English. Mistranslations were fixed — for example On/Off shown as "Yes/No", Japanese and Korean "Current Version" reading as "Latest Version", and German "Installing" reading as "Installed" — along with sentences that had lost half their meaning (the BepInEx reinstall warning no longer drops "and need to be reinstalled"), European Portuguese wording in the Brazilian translation, tab names that pointed at tabs that no longer exist, and inconsistent terms within each language
 - Mod names are no longer translated. They are proper nouns and now show exactly as the mod names itself in every language. The loose name matching behind the translations gave different mods the same translated name (Enhanced Prefab Loader, its API and the 1.0classic build all showed as one name in Spanish), and renaming a mod pre-filled the translated name, which then replaced the real one
 - The duplicate-DLL cleanup message read "Removed 3 duplicate DLLs removed"
+- Enabling, disabling, removing mods and switching profiles are refused while the game folder is wrong, the same way installing already was. With the wrong folder set they moved and deleted files relative to a folder the mods were never installed in
+- Settings no longer repeats the "game not found" message under BepInEx when the game folder is wrong; it says BepInEx can be checked once the folder is correct. The BepInEx status messages are translated, and the old advice to install BepInEx "with Game Root target" now points to the Getting Started tab
 
 Version 2.0.4
 NOTE
