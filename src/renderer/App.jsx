@@ -8,6 +8,8 @@ import InstalledMods from './components/InstalledMods';
 import ProfileManager from './components/ProfileManager';
 import ConfigEditor from './components/ConfigEditor';
 import Settings from './components/Settings';
+import Home from './components/Home';
+import GameLog from './components/GameLog';
 
 export default function App({ detectedLocale }) {
   return (
@@ -19,7 +21,13 @@ export default function App({ detectedLocale }) {
 
 function AppInner() {
   const { t } = useI18n();
-  const [view, setView] = useState('suggested');
+  const [view, setView] = useState('home');
+  // Optional filter to open Installed on (e.g. Home's "Open Updates"). The
+  // counter makes a repeat click re-apply it after the user changed tabs.
+  const [modsFilter, setModsFilter] = useState({ filter: null, n: 0 });
+  const [autoInstall, setAutoInstall] = useState(null); // { files, n } picked with Install from file
+  // Installed always opens on All unless a specific tab was asked for (Home's tiles).
+  const navigate = (v, opts) => { if (v === 'mods') setModsFilter(f => ({ filter: opts?.filter || 'All', n: f.n + 1 })); setView(v); };
   const [mods, setMods] = useState([]);
   const [staged, setStaged] = useState([]);
   const [conflicts, setConflicts] = useState([]);
@@ -35,6 +43,8 @@ function AppInner() {
   const [installProgress, setInstallProgress] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [toggleProgress, setToggleProgress] = useState(null);
+  const [platform, setPlatform] = useState(null);
+  const [logSummary, setLogSummary] = useState(null);
 
   const changeTheme = (id) => { setThemeId(id); applyTheme(id); window.api.setTheme(id); };
 
@@ -66,6 +76,8 @@ function AppInner() {
         if (savedTheme) { setThemeId(savedTheme); applyTheme(savedTheme); }
         let gp = await window.api.getGamePath(); if (!gp) gp = await window.api.detectGame(); if (gp) setGamePath(gp);
         setBepinex(await window.api.getBepInExStatus()); await refreshMods(); await refreshStaged();
+        try { setPlatform(await window.api.getGamePlatform()); } catch {}
+        try { setLogSummary(await window.api.readGameLog()); } catch {}
       } catch (e) { console.error(e); } finally { setLoading(false); }
 
       // One check per launch, after the UI is up so a slow network never delays
@@ -82,7 +94,19 @@ function AppInner() {
     if (!loading && mods.length === 0 && !bepinex.installed) setView('suggested');
   }, [loading]);
   useEffect(() => { window.api.onStagingChanged(files => setStaged(files)); }, []);
+  // The game writes a new log every session; re-read it when the user comes
+  // back to the manager so the Game Log badge reflects the latest run.
+  useEffect(() => {
+    const onFocus = async () => { try { setLogSummary(await window.api.readGameLog()); } catch {} };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+  // The platform follows the game folder.
+  useEffect(() => { window.api.getGamePlatform().then(setPlatform).catch(() => {}); }, [gamePath]);
   useEffect(() => { window.api.onInstallProgress(data => setInstallProgress(data)); }, []);
+  // Copy progress for Install from file (null when nothing is being added).
+  const [adding, setAdding] = useState(null);
+  useEffect(() => { window.api.onAddProgress?.(d => setAdding(d?.active ? d : null)); }, []);
   useEffect(() => {
     if (!window.api.onToggleProgress) return;
     const off = window.api.onToggleProgress(data => setToggleProgress(data));
@@ -216,7 +240,10 @@ function AppInner() {
     else notify(r.error,'error');
   };
   const handleAdd = async () => {
+    if (adding) { notify(t('Still adding the last archive — please wait.'), 'info'); return; }
     const r = await window.api.addToStaging();
+    setAdding(null);
+    if (r && r.success === false && r.error) { notify(r.error, 'error'); return; }
     if (r?.success) {
       const { added, skipped, replaced, pruned } = r;
       // ONE toast covering everything that happened. There is a single toast
@@ -240,6 +267,14 @@ function AppInner() {
       const noteworthy = nothingHappened || dupes.length > 0 || others > 0 || replaced?.length > 0 || pruned?.length > 0;
       notify(parts.join(' · '), noteworthy ? 'warn' : 'success', noteworthy ? 7000 : undefined);
       await refreshStaged();
+      // Install from file installs straight away: open Staged, which runs the
+      // same install path as its Install button (build popups, security checks),
+      // for every archive just picked. Without a game folder they stay staged.
+      const picked = [...(added || []), ...(replaced || []).map(x => x.filename)];
+      if (picked.length && bepinex.gameFound !== false) {
+        setAutoInstall({ files: picked, n: Date.now() });
+        setView('staging');
+      }
     }
   };
   const handleLaunch = async () => {
@@ -257,6 +292,34 @@ function AppInner() {
   return (
     <div style={{ display:'flex',flexDirection:'column',height:'100vh' }}>
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
+      {!adding && installing && (
+        <div className="add-progress" role="status" aria-live="polite">
+          <span className="spinner" style={{ width: 16, height: 16 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>
+              {installProgress?.phase === 'removing' ? t('Removing old version') : t('Installing')} · {staged.find(f => f.filename === installing)?.parsedName || installing}
+            </div>
+            <div className="progress" style={{ marginTop: 6 }}>
+              {installProgress?.total > 0
+                ? <div className="bar" style={{ width: `${Math.round((installProgress.done / installProgress.total) * 100)}%` }} />
+                : <div className="bar-indeterminate" style={{ width: '40%' }} />}
+            </div>
+          </div>
+          {installProgress?.total > 0 && <span className="mono" style={{ fontSize: 12, color: 'var(--text-3)' }}>{installProgress.done}/{installProgress.total}</span>}
+        </div>
+      )}
+      {adding && (
+        <div className="add-progress" role="status" aria-live="polite">
+          <span className="spinner" style={{ width: 16, height: 16 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="truncate" style={{ fontSize: 13.5, fontWeight: 600 }}>
+              {t('Adding archive')}{adding.total > 1 ? ` ${adding.index || 1}/${adding.total}` : ''}{adding.name ? ` · ${adding.name}` : ''}
+            </div>
+            <div className="progress" style={{ marginTop: 6 }}><div className="bar" style={{ width: `${adding.percent || 0}%`, background: 'linear-gradient(90deg, var(--info), var(--info-bright))' }} /></div>
+          </div>
+          <span className="mono" style={{ fontSize: 12, color: 'var(--text-3)' }}>{adding.percent || 0}%</span>
+        </div>
+      )}
 
       {pendingRemove && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.65)' }}>
@@ -280,11 +343,11 @@ function AppInner() {
       )}
 
       <div style={{display:'flex',flex:1,minHeight:0}}>
-        <Sidebar view={view} onNav={setView} modCount={mods.length} stagedCount={staged.length} themeId={themeId} onChangeTheme={changeTheme} appUpdate={appUpdate} />
+        <Sidebar view={view} onNav={navigate} modCount={mods.length} enabledCount={enabledCount} stagedCount={staged.length}
+          logErrors={logSummary?.exists ? logSummary.counts.errors : 0} bepinex={bepinex} platform={platform} onLaunch={handleLaunch} appUpdate={appUpdate} />
         <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
       {/* Title bar. The heavy accent underline is gone — the header now reads as
-          part of the app chrome, with state shown as pills rather than solid
-          colour blocks. */}
+          part of the app chrome; mod counts live in the sidebar status card. */}
       <header className="drag-region" style={{
         display:'flex',justifyContent:'space-between',alignItems:'center',
         background:'var(--bg-base)',padding:'0 0 0 16px',
@@ -292,16 +355,6 @@ function AppInner() {
       }}>
         <div className="no-drag" style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
           <span className="mono truncate" style={{fontSize:12,color:'var(--text-3)',letterSpacing:.3}}>TCG Card Shop Simulator</span>
-        </div>
-        <div className="no-drag" style={{display:'flex',alignItems:'center',gap:8}}>
-          <span className="pill">{mods.length} {t('mods')}</span>
-          <span className="pill pill-success">{enabledCount} {t('active')}</span>
-          {staged.length>0&&<span className="pill pill-accent">{staged.length} {t('staged')}</span>}
-          {conflicts.length>0&&<span className="pill pill-danger">{conflicts.length} {t('conflicts')}</span>}
-          <button className="btn btn-success btn-sm" style={{marginLeft:4,paddingLeft:14,paddingRight:16}} onClick={handleLaunch}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
-            {t('Play')}
-          </button>
         </div>
         <div className="no-drag" style={{display:'flex',height:'100%',marginLeft:8}}>
           <WinBtn onClick={()=>window.api.minimize()} label="Minimize"><path d="M5 12h14"/></WinBtn>
@@ -311,12 +364,14 @@ function AppInner() {
       </header>
 
         <main style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'auto',background:'var(--bg-deep)'}}>
+          {view==='home'&&<Home mods={mods} staged={staged} updates={updates} conflicts={conflicts} bepinex={bepinex} logSummary={logSummary} onLaunch={handleLaunch} onAdd={handleAdd} onNav={navigate}/>}
+          {view==='log'&&<GameLog onNav={setView} onLogLoaded={setLogSummary}/>}
           {view==='suggested'&&<SuggestedMods mods={mods}/>}
-          {view==='staging'&&<StagingView staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
-          {view==='mods'&&<InstalledMods mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
+          {view==='staging'&&<StagingView autoInstall={autoInstall} onAutoInstallTaken={() => setAutoInstall(null)} staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
+          {view==='mods'&&<InstalledMods openFilter={modsFilter} mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
           {view==='profiles'&&<ProfileManager mods={mods} notify={notify} onRefresh={refreshMods}/>}
-          {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex}
+          {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex} themeId={themeId} onChangeTheme={changeTheme}
             notify={notify} onRefreshMods={refreshMods} onRefreshStaged={refreshStaged}
             onSetBepinex={async()=>setBepinex(await window.api.getBepInExStatus())}
             onSetPath={async()=>{const p=await window.api.openFolderDialog();if(p){const r=await window.api.setGamePath(p);const finalPath=(r&&r.path)||p;setGamePath(finalPath);setBepinex(await window.api.getBepInExStatus());notify(r&&r.adjusted?t('Game path set to the Content folder (where mods must go)'):t('Game path set'),'success');}}}

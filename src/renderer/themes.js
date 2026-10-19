@@ -80,6 +80,9 @@ function buildTheme({ id, name, group, surfaces, texts, borders, accent, onAccen
 // Shared status palettes. Only a theme whose own surface hue collides with one
 // of these overrides it, and then only the colour that collides.
 const DARK_STATUS   = ['#2f9c4e', '#46c46a', '#a33a32', '#e06a60', '#4a7fc1', '#6fa8e8'];
+// Midnight's accent is the Real TCG Overhaul logo orange, which sits too close
+// to the usual red, so Midnight uses a rose red for blocked/destructive.
+const MIDNIGHT_STATUS = ['#2f9c4e', '#46c46a', '#a3324f', '#f0637f', '#4a7fc1', '#6fa8e8'];
 const LIGHT_STATUS  = ['#246b2a', '#1f7a33', '#9c2a22', '#b8342a', '#26538f', '#2a63aa'];
 // "Update" in violet, for themes built on blue or red surfaces.
 const DARK_VIOLET   = ['#2f9c4e', '#46c46a', '#a33a32', '#e06a60', '#6b5bd6', '#9b8cff'];
@@ -93,7 +96,7 @@ export const THEMES = [
     surfaces: ['#0e1014', '#121519', '#14181e', '#1c232c', '#222a34', '#2a3340'],
     texts: ['#e9ecf1', '#cdd5e0', '#7f8b9c', '#5b6676'],
     borders: ['#1d242c', '#262e39'],
-    accent: ['#e8a33d', '#c46a1f'], onAccent: '#17120a', status: DARK_STATUS,
+    accent: ['#ff8a3d', '#d9661f'], onAccent: '#1c0f05', status: MIDNIGHT_STATUS,
   }),
   buildTheme({
     // Violet-black surfaces, magenta accent — already well clear of the status trio.

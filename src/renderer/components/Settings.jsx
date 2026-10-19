@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useI18n } from '../i18n';
+import { useI18n, SUPPORTED_LOCALES } from '../i18n';
+import { THEMES } from '../themes';
 import { APP_VERSION } from '../version';
 
-export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notify, onRefreshMods, onRefreshStaged, onSetBepinex }) {
-  const { t } = useI18n();
+export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notify, onRefreshMods, onRefreshStaged, onSetBepinex, themeId, onChangeTheme }) {
+  const { t, locale, setLocale } = useI18n();
   const [deleteAfterInstall, setDeleteAfterInstall] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(false);
   const [minimizeBtnToTray, setMinimizeBtnToTray] = useState(false);
@@ -12,8 +13,6 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
   const [healthCheck, setHealthCheck] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [dupBusy, setDupBusy] = useState(false);
-  const [upd, setUpd] = useState(null);
-  const [updBusy, setUpdBusy] = useState(false);
 
   const [regroupBusy, setRegroupBusy] = useState(false);
 
@@ -65,6 +64,25 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
           column when the window is too narrow for two. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))', gap: 18, alignItems: 'start' }}>
         <div>
+      {/* Language and theme moved here from the sidebar, which now shows the
+          game status and the Play button instead. */}
+      <S title={t('Appearance')}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('Language')}</span>
+            <select className="select" value={locale} onChange={e => setLocale(e.target.value)}>
+              {SUPPORTED_LOCALES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('Theme')}</span>
+            <select className="select" value={themeId} onChange={e => onChangeTheme(e.target.value)}>
+              <optgroup label={t('Dark')}>{THEMES.filter(th => th.group === 'dark').map(th => <option key={th.id} value={th.id}>{th.name}</option>)}</optgroup>
+              <optgroup label={t('Light')}>{THEMES.filter(th => th.group === 'light').map(th => <option key={th.id} value={th.id}>{th.name}</option>)}</optgroup>
+            </select>
+          </label>
+        </div>
+      </S>
       <S title={t('Game Location')}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{ flex: 1, padding: '10px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-2)', borderRadius: 'var(--radius)', fontSize: 14, fontFamily: 'var(--mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: gamePath ? 'var(--text-2)' : 'var(--text-4)' }}>
@@ -151,25 +169,6 @@ export default function Settings({ gamePath, bepinex, onSetPath, onDetect, notif
       </S>
         </div>
         <div>
-      <S title={t('Mod Updates')}>
-        <Opt title={t('Check for mod updates')}
-          hint={t('Asks Nexus Mods about the mods you have installed, once each time the manager starts. Nothing is downloaded and nothing is stored.')}>
-          <button className="btn btn-ghost btn-sm" disabled={updBusy} onClick={async () => {
-            setUpdBusy(true);
-            try { setUpd(await window.api.checkUpdates(true)); } finally { setUpdBusy(false); }
-            onRefreshMods?.();
-          }}>
-            {updBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Check Now')}
-          </button>
-        </Opt>
-        {upd && (
-          <div style={{ fontSize: 13, marginTop: 10, color: upd.error ? 'var(--red-bright)' : 'var(--text-3)' }}>
-            {upd.error
-              ? `${t('Check failed')}: ${upd.error}`
-              : `${upd.diagnostics?.updates ?? 0} ${t('updates found')} — ${upd.diagnostics?.answered ?? 0}/${upd.diagnostics?.withId ?? 0} ${t('mods recognised on Nexus Mods')}`}
-          </div>
-        )}
-      </S>
       <S title={t('Health Check')}>
         <button className="btn btn-ghost" onClick={async () => { setHealthBusy(true); setHealthCheck(await window.api.bepinexHealthCheck()); setHealthBusy(false); }} disabled={healthBusy} style={{ borderColor: 'var(--green-bright)' }}>
           {healthBusy && <span className="spinner" style={{ width: 13, height: 13 }} />}{t('Health Check')}

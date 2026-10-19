@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useI18n } from '../i18n';
 
-export default function InstalledMods({ mods, conflicts, updates = {}, latestVersions = {}, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
+export default function InstalledMods({ openFilter, mods, conflicts, updates = {}, latestVersions = {}, onToggle, onRemove, onMarkCore, onRename, togglingId, toggleProgress }) {
   const { t, tMod } = useI18n();
   const [search, setSearch] = useState('');
-  const [statusF, setStatusF] = useState('All');
-  const [targetF, setTargetF] = useState('All');
+  const [statusF, setStatusF] = useState(openFilter?.filter || 'All');
+  useEffect(() => { if (openFilter?.filter) setStatusF(openFilter.filter); }, [openFilter?.n]);
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [depWarnings, setDepWarnings] = useState([]);
@@ -46,7 +46,6 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
     return out;
   }, [conflicts]);
   const depMap = useMemo(() => { const m = {}; depWarnings.forEach(w => { if (!m[w.modId]) m[w.modId] = []; m[w.modId].push(w.missingDep); }); return m; }, [depWarnings]);
-  const uniqueTargets = useMemo(() => ['All', ...new Set(mods.map(m => m.targetLabel).filter(Boolean))], [mods]);
 
   // Pin "Main Core Mods" to the top regardless of stored group order.
   // The user can still reorder other groups freely; Main Core always stays first.
@@ -59,10 +58,11 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
   const filtered = useMemo(() => mods.filter(m => {
     if (statusF === 'Enabled' && !m.enabled) return false;
     if (statusF === 'Disabled' && m.enabled) return false;
-    if (targetF !== 'All' && m.targetLabel !== targetF) return false;
+    if (statusF === 'Updates' && !updates[m.id]) return false;
+    if (statusF === 'Issues' && !(depMap[m.id]?.length || conflictIds.has(m.id))) return false;
     if (search && !m.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [mods, statusF, targetF, search]);
+  }), [mods, statusF, search, updates, depMap, conflictIds]);
 
   const sorted = useMemo(() => {
     if (!sortCol) return filtered;
@@ -112,22 +112,6 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
     await window.api.createModGroup(newGroupName.trim());
     setNewGroupName(''); setShowCreate(false);
     setGroups(await window.api.getModGroups());
-  };
-
-  // Lock/Unlock All: apply core status to every mod currently passing the
-  // filters (status/search/target). Uses a single bulk IPC call so the DB
-  // saves once, then triggers one parent refresh via onMarkCore(null, …) –
-  // we deliberately pass a sentinel id=null so App.jsx's handleMarkCore
-  // pattern-match lets us just refresh rather than double-toggle.
-  const applyLockAll = async (isCore) => {
-    if (filtered.length === 0) return;
-    const ids = filtered.map(m => m.id);
-    const r = await window.api.markCoreBulk(ids, isCore);
-    if (r?.success && r.updated > 0) {
-      // Trigger refresh via the existing onMarkCore plumbing — we pass null
-      // id so the parent notifies generically and re-fetches mods.
-      onMarkCore(null, isCore, { bulk: true, count: r.updated });
-    }
   };
   const deleteGroup = async id => { await window.api.deleteModGroup(id); setGroups(await window.api.getModGroups()); };
   const renameGroup = async id => {
@@ -194,14 +178,26 @@ export default function InstalledMods({ mods, conflicts, updates = {}, latestVer
         <h1 className="page-title">{t('Installed Mods')}</h1>
         <p className="page-sub">{mods.length} {t('mods')} · {mods.filter(m => m.enabled).length} {t('active')}</p>
       </div>
+      {/* Quick filters with counts: the questions people actually ask of this
+          list — what needs updating, what has a problem, what is switched off. */}
+      <div role="tablist" aria-label={t('Filter')} style={{ display: 'flex', gap: 4, flexWrap: 'wrap', padding: '16px 24px 0' }}>
+        {[
+          ['All', t('All'), mods.length],
+          ['Updates', t('Updates'), mods.filter(m => updates[m.id]).length],
+          ['Issues', t('Issues'), mods.filter(m => depMap[m.id]?.length || conflictIds.has(m.id)).length],
+          ['Disabled', t('Off'), mods.filter(m => !m.enabled).length],
+        ].map(([id, label, n]) => (
+          <button key={id} type="button" role="tab" aria-selected={statusF === id} onClick={() => setStatusF(id)}
+            className={`btn btn-sm ${statusF === id ? 'btn-ghost' : 'btn-quiet'}`}
+            style={statusF === id ? { color: 'var(--accent)', borderColor: 'var(--accent-border)', background: 'var(--accent-soft)' } : undefined}>
+            {label} <span className="mono" style={{ fontSize: 11.5, opacity: .8 }}>{n}</span>
+          </button>
+        ))}
+      </div>
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, padding: '18px 24px', alignItems: 'flex-end', flexWrap: 'wrap', flexShrink: 0 }}>
-        <FL label={t('STATUS')}><select className="select" value={statusF} onChange={e => setStatusF(e.target.value)}><option value="All">{t('All')}</option><option value="Enabled">{t('Enabled')}</option><option value="Disabled">{t('Disabled')}</option></select></FL>
+      <div style={{ display: 'flex', gap: 12, padding: '14px 24px 18px', alignItems: 'flex-end', flexWrap: 'wrap', flexShrink: 0 }}>
         <FL label={t('SEARCH')} style={{ flex: 2, minWidth: 140 }}><input className="input" placeholder={t('Filter by name...')} value={search} onChange={e => setSearch(e.target.value)} /></FL>
-        <FL label={t('EXTRACT TARGET')}><select className="select" value={targetF} onChange={e => setTargetF(e.target.value)}>{uniqueTargets.map(u => <option key={u} value={u}>{u === 'All' ? t('All') : u}</option>)}</select></FL>
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => applyLockAll(true)} title={t('Mark every visible mod as Core (locked from toggle/remove)')} style={{ whiteSpace: 'nowrap' }}>{t('Lock All')}</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => applyLockAll(false)} title={t('Unmark every visible mod as Core (allow toggling/removing)')} style={{ whiteSpace: 'nowrap' }}>{t('Unlock All')}</button>
           {!showCreate ? (
             <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(true)} style={{ whiteSpace: 'nowrap' }}>{t('Create Group')}</button>
           ) : (
@@ -345,8 +341,6 @@ function FL({ label, children, style }) {
 
 function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
   const [h, setH] = useState(false);
-  const isCore = mod.core;
-  const isPrefab = isCore && mod.files?.some(f => f.toLowerCase().includes('_prefabloader'));
   const isRoot = mod.targetKey === 'game_root' || mod.targetKey === 'bepinex';
   const translatedName = tMod(mod.name, '').name;
   const hasDeps = missingDeps && missingDeps.length > 0;
@@ -371,32 +365,20 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
         </div>
       )}
       <div style={{ width: 95 }}>
-        {isCore ? (
-          // A core mod can be switched off by a profile. The locked pill used to
-          // look identical either way, so an off core mod was indistinguishable
-          // from an on one without unlocking it first. Off gets its own state.
-          mod.enabled === false ? (
-            <span className="pill pill-danger" style={{ height: 28, padding: '0 11px' }}
-              title={t('Core mod, turned off by a profile')}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-              {t('Off')}
-            </span>
-          ) : (
-            <span className="pill pill-accent" style={{ height: 28, padding: '0 11px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-              {isPrefab ? t('Prefab') : t('Core')}
-            </span>
-          )
-        ) : busy ? (
+        {busy ? (
           <div title={t('Working…')} className="pill" style={{ height: 28, padding: '0 11px', cursor: 'default' }}>
             <span className="spinner" style={{ width: 11, height: 11 }} />
             {progress && progress.total > 0 ? `${Math.min(100, Math.round(progress.done / progress.total * 100))}%` : '…'}
           </div>
         ) : (
-          <button type="button" onClick={anyToggling ? undefined : onToggle} disabled={anyToggling}
-            className={`pill ${mod.enabled ? 'pill-success' : 'pill-danger'}`} style={{ height: 28, padding: '0 12px', cursor: anyToggling ? 'default' : 'pointer' }}>
-            {mod.enabled && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>}
-            {mod.enabled ? t('On') : t('Off')}
+          <button type="button" role="switch" aria-checked={!!mod.enabled} aria-label={`${mod.enabled ? t('On') : t('Off')}: ${translatedName}`}
+            title={mod.enabled ? t('On') : t('Off')}
+            onClick={anyToggling ? undefined : onToggle} disabled={anyToggling}
+            style={{ position: 'relative', width: 48, height: 26, borderRadius: 999, border: '1px solid',
+              borderColor: mod.enabled ? 'var(--accent)' : 'var(--border-2)',
+              background: mod.enabled ? 'var(--accent)' : 'var(--bg-elevated)', cursor: anyToggling ? 'default' : 'pointer', transition: 'background .15s' }}>
+            <span style={{ position: 'absolute', top: 2, left: mod.enabled ? 24 : 2, width: 20, height: 20, borderRadius: '50%',
+              background: mod.enabled ? 'var(--on-accent)' : 'var(--text-3)', transition: 'left .15s' }} />
           </button>
         )}
       </div>
@@ -428,6 +410,9 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
             )}
           </div>
         )}
+        {!isEditingName && mod.targetLabel && (
+          <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }} title={t(mod.targetLabel)}>{t(mod.targetLabel)}</div>
+        )}
         {hasDeps && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--accent)', marginTop: 3 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
@@ -447,7 +432,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
       </div>
       <div style={{ width: 134, marginLeft: 28 }}>
         {update ? (
-          <button type="button" className="pill pill-info pill-pulse"
+          <button type="button" className="pill pill-info pill-pulse pill-btn"
             title={`${update.installed} → ${update.latest} · ${t('Open on Nexus Mods')}`}
             onClick={e => { e.stopPropagation(); window.api.openUrl(`https://www.nexusmods.com/tcgcardshopsimulator/mods/${update.modId}`); }}
             style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -471,12 +456,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
          <span style={{ color: 'var(--text-4)' }}>—</span>}
       </div>
       <div style={{ width: 100, display: 'flex', gap: 5, justifyContent: 'center' }}>
-        <button className="btn btn-ghost btn-sm btn-icon" disabled={anyToggling} onClick={() => onMarkCore(!isCore)} aria-label={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')} title={isCore ? t('Unlock (allow toggling)') : t('Lock as core mod')}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="4" y="10" width="16" height="10" rx="2" />{isCore ? <path d="M8 10V7a4 4 0 0 1 7-2.6" /> : <path d="M8 10V7a4 4 0 0 1 8 0v3" />}
-          </svg>
-        </button>
-        {!isCore && <button className="btn btn-danger btn-sm btn-icon" disabled={anyToggling} onClick={anyToggling ? undefined : onRemove} aria-label={t('Remove')}>
+        {<button className="btn btn-danger btn-sm btn-icon" disabled={anyToggling} onClick={anyToggling ? undefined : onRemove} aria-label={t('Remove')}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M6 7l1 13h10l1-13" /></svg>
         </button>}
       </div>

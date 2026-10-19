@@ -1,3 +1,32 @@
+Unreleased
+NEW
+- Home page. It opens first and says whether the game is ready to play — or what to fix first — with Play, Install from file and Open Game Folder, tiles for active mods, updates, problems and staged archives that open Installed on the matching tab (All, Updates, Issues) or Staged, the full list of updates, and a warning when the last game session logged an error
+- Game Log page. Reads BepInEx's LogOutput.log from the last time the game ran and shows errors, warnings and plugins loaded, groups the problems by the mod they came from, expands an error to its stack trace, follows the log live while the game runs, and copies a ready-to-paste report. The sidebar shows the error count next to Game Log
+- The sidebar shows the game's status at all times — game found and which platform or Steam branch, BepInEx, mods active — with a Play button under it, and the manager's version in the Current Version pill. Language and theme moved to a new Appearance section at the top of Settings
+- Updating a mod moves the older versions of it out of Staged into an Old Versions folder inside the staging folder, so Staged no longer fills with Downgrade rows. Old Versions keeps only the newest older version of each mod and sends anything older to the Recycle Bin; drag an archive back into the staging folder to install it again
+
+CHANGED
+- Getting Started shows each mod pack as a card with its progress through the files and requirements it needs, and the full list opens underneath. Recommended mods no longer count as missing
+- Installed has quick filters with counts for All, Updates, Issues and Off, a switch to turn each mod on or off, and the install folder under each mod's name
+- Midnight uses the Real TCG Overhaul logo orange as its accent, with a rose red for blocked and destructive actions so the two stay distinct. The Play button moved from the title bar to the sidebar, and the mod, active and staged counts left the title bar
+- Switches in Installed and the Config Editor use the theme's accent colour
+- Home shows each update as two pills, the installed version in grey and the new one in the theme's accent colour
+- Staged shows the MOD icon beside each archive, and Add Archives is now Install from file
+- Install from file installs the archives you pick straight away, through the same checks and build popups as the Install button, instead of only adding them to Staged. Without a game folder they are only staged
+- A progress panel shows while an archive is being added (with a percentage while a large file copies from another drive) and while a mod installs, on every page. Clicking Install from file again while an archive is still being added says to wait instead of starting a second copy
+- Installed opens on the All tab from the sidebar; only Home's tiles open it on another tab
+- The sidebar shows the installed BepInEx version, read from BepInEx's own DLL, and the number of active mods
+- Show in Installed in the Game Log matches the Update Available pill, and both light up on hover. Mod names in the Game Log show in full instead of being cut off
+- Getting Started progress bars are blue, and green when complete
+- Getting Started hides a mod's Required or Recommended tag once it is installed
+
+REMOVED
+- Core mods and locking. Every mod can be turned on, off or removed; Lock All, Unlock All and the Extract Target filter are gone from Installed
+- The Mod Updates panel in Settings. Updates are still checked each time the manager starts and shown in Installed and on Home
+
+FIXED
+- Archives whose Nexus download code is letters only with the lowercase at the end ("SM11 - Unified Minds 1811 1.0.1 2026-10-18T16-14Z HTCZLHQqc") installed under the full archive name with no version, so a newer download was never offered as an update. They now read as the mod's name, version and Nexus id, and mods already installed under the long name are renamed the next time the manager starts
+
 Version 2.0.5
 CHANGED
 - MangaMaker installs. Its bundled 7z.exe and ReadingCornerPicker.ps1 were blocked as executables; both are now allowed, but only at the exact paths MangaMaker ships them (BepInEx/plugins/ReadingCorner/Tools/), so the same files anywhere else are still blocked

@@ -187,7 +187,7 @@ export default function ProfileManager({ notify, onRefresh, mods = [] }) {
                         <input type="checkbox" checked={picked.has(m.id)}
                           onChange={() => togglePick(m.id)} style={{ width: 15, height: 15, accentColor: 'var(--accent)' }} />
                         <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{m.name}</span>
-                        {m.core && <span className="pill pill-accent">{t('Core')}</span>}
+                        
                         {m.version && <span className="badge">{m.version}</span>}
                       </label>
                     ))}

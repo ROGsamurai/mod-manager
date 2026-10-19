@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
+import modIcon from '../assets/mod-icon.png';
 import { useI18n } from '../i18n';
 
 const fmt = b => b>1048576?`${(b/1048576).toFixed(1)} MB`:b>1024?`${(b/1024).toFixed(0)} KB`:`${b} B`;
 
-export default function StagingView({ staged, onInstall, onAdd, onRefresh, notify, installing, installProgress, gameFound = true }) {
+export default function StagingView({ autoInstall, onAutoInstallTaken, staged, onInstall, onAdd, onRefresh, notify, installing, installProgress, gameFound = true }) {
   const { t, tMod } = useI18n();
   const [targets, setTargets] = useState([]);
   const [sels, setSels] = useState({});
@@ -139,13 +140,35 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
     if (!(await confirmEpl(filename))) return;
     // No target argument: installMod detects the destination from the archive
     // itself. The renderer's detected value is display only.
-    await onInstall(filename, null, names[filename] || filename.replace(/\.(zip|rar|7z)$/i, ''));
+    // names[] fills in from an effect, so an install started the moment the
+    // archive arrives (Install from file) falls back to the parsed name rather
+    // than the raw file name.
+    const parsed = staged.find(f => f.filename === filename)?.parsedName;
+    await onInstall(filename, null, names[filename] || parsed || filename.replace(/\.(zip|rar|7z)$/i, ''));
     setPeek(null); setPreview(null);
   };
   const [bulkAction, setBulkAction] = useState(null); // 'installNew' | 'updateAll'
   const doInstallNew = async () => { setBulkAction('installNew'); try { for (const f of staged) { if (f.status === 'new' && !blockedMap[f.filename]) await doInstall(f.filename); } } finally { setBulkAction(null); } };
   const doUpdateAll = async () => { setBulkAction('updateAll'); try { for (const f of staged) { if (f.status === 'update' && !blockedMap[f.filename]) await doInstall(f.filename); } } finally { setBulkAction(null); } };
   const isBusy = !!bulkAction || !!installing;
+
+  // Archives picked with Install from file are installed as soon as they show
+  // up in the list, one after another, through doInstall like a manual click.
+  // The ref marks a batch as taken at once; the parent clears its copy on the
+  // next render, and without the ref every re-render in between started the
+  // same batch again.
+  const autoTakenRef = useRef(null);
+  useEffect(() => {
+    if (!autoInstall?.files?.length || isBusy || autoTakenRef.current === autoInstall.n) return;
+    autoTakenRef.current = autoInstall.n;
+    const ready = autoInstall.files.filter(fn => staged.some(f => f.filename === fn));
+    onAutoInstallTaken?.();
+    if (!ready.length) return;
+    (async () => {
+      setBulkAction('auto');
+      try { for (const fn of ready) await doInstall(fn); } finally { setBulkAction(null); }
+    })();
+  }, [autoInstall?.n, staged, isBusy]);
 
   const [confirmClear, setConfirmClear] = useState(false);
   const doClearAll = async () => {
@@ -186,7 +209,7 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
           <p className="page-sub">{t('Archives waiting to be installed. The manager decides where each one goes.')}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
-          <button className="btn btn-ghost" onClick={onAdd} disabled={isBusy}>{t('Add Archives')}</button>
+          <button className="btn btn-ghost" onClick={onAdd} disabled={isBusy}>{t('Install from file')}</button>
           {newCount > 0 && <button className="btn btn-accent" onClick={doInstallNew} disabled={isBusy || !gameFound}>
             {bulkAction === 'installNew' ? t('Installing...') : `${t('Install New')} (${newCount})`}
           </button>}
@@ -217,9 +240,9 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
             </svg>
             <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>{t('No mod archives staged')}</div>
             <div style={{ fontSize: 14, color: 'var(--text-4)', textAlign: 'center', lineHeight: 1.7, maxWidth: 420 }}>
-              {t('Click "+ Add Archives" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe')}
+              {t('Click "Install from file" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe')}
             </div>
-            <button className="btn btn-ghost" onClick={onAdd} style={{ marginTop: 20 }}>{t('Browse for archives...')}</button>
+            <button className="btn btn-ghost" onClick={onAdd} style={{ marginTop: 20 }}>{t('Browse for file...')}</button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -232,11 +255,11 @@ export default function StagingView({ staged, onInstall, onAdd, onRefresh, notif
                 style={{ padding: 0, overflow: 'hidden', animation: isUpdate ? 'updateGlow 2.4s ease-in-out infinite' : 'fadeIn .2s ease',
                   opacity: isInstalled ? 0.5 : 1, transition: 'opacity .2s' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px' }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 11, background: blockedMap[f.filename] ? 'var(--red-soft)' : 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: blockedMap[f.filename] ? 'var(--red-bright)' : isUpdate ? 'var(--accent)' : 'var(--text-3)' }}>
+                  <div style={{ width: 56, height: 56, borderRadius: 14, overflow: 'hidden', background: blockedMap[f.filename] ? 'var(--red-soft)' : '#000', border: '1px solid var(--border-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--red-bright)' }}>
                     {blockedMap[f.filename] ? (
-                      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>
                     ) : (
-                      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" /></svg>
+                      <img src={modIcon} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                     )}
                   </div>
                   <div style={{ flex: 1, minWidth: 200, paddingRight: 12 }}>

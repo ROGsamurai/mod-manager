@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
   setGamePath: (p) => ipcRenderer.invoke('game:set-path', p),
   launchGame: () => ipcRenderer.invoke('game:launch'),
   getGamePlatform: () => ipcRenderer.invoke('game:platform'),
+  readGameLog: () => ipcRenderer.invoke('log:read'),
+  openLogFolder: () => ipcRenderer.invoke('log:open-folder'),
   getBepInExStatus: () => ipcRenderer.invoke('game:bepinex'),
   bepinexHealthCheck: () => ipcRenderer.invoke('game:bepinex-health'),
   removeDuplicatePlugins: () => ipcRenderer.invoke('game:remove-duplicate-plugins'),
@@ -72,6 +74,7 @@ contextBridge.exposeInMainWorld('api', {
   setMinimizeBtnToTray: (val) => ipcRenderer.invoke('settings:set-minimize-btn-to-tray', val),
   openFolderDialog: () => ipcRenderer.invoke('dialog:open-folder'),
   openStagingFolder: () => ipcRenderer.invoke('dialog:open-staging'),
+  openOldVersionsFolder: () => ipcRenderer.invoke('dialog:open-old-versions'),
   openAppDataFolder: () => ipcRenderer.invoke('dialog:open-appdata'),
   openSavesFolder: () => ipcRenderer.invoke('dialog:open-saves'),
   openGameFolder: () => ipcRenderer.invoke('dialog:open-game'),
@@ -81,6 +84,10 @@ contextBridge.exposeInMainWorld('api', {
   onStagingChanged: (cb) => {
     ipcRenderer.removeAllListeners('staging:changed');
     ipcRenderer.on('staging:changed', (_, d) => { try { cb(d); } catch (e) { console.error('[staging:changed]', e); } });
+  },
+  onAddProgress: (cb) => {
+    ipcRenderer.removeAllListeners('staging:add-progress');
+    ipcRenderer.on('staging:add-progress', (_, d) => { try { cb(d); } catch (e) { console.error('[staging:add-progress]', e); } });
   },
   onInstallProgress: (cb) => {
     ipcRenderer.removeAllListeners('install-progress');

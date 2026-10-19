@@ -254,6 +254,18 @@ ipcMain.handle('game:set-path', (_, p) => {
   }
   catch (e) { return { success: false, error: e.message }; }
 });
+ipcMain.handle('log:read', () => {
+  try { return require('./game-log').readGameLog(modManager.gamePath, [...modManager.mods.values()]); }
+  catch (e) { return { exists: false, error: e.message }; }
+});
+ipcMain.handle('log:open-folder', () => {
+  try {
+    const p = require('./game-log').logPathFor(modManager.gamePath);
+    if (p && fs.existsSync(p)) shell.showItemInFolder(p);
+    else if (modManager.gamePath) shell.openPath(path.join(modManager.gamePath, 'BepInEx'));
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
 ipcMain.handle('game:platform', () => {
   try { return gameDetector.getPlatform(modManager.gamePath); }
   catch { return { platform: 'unknown', betaKey: '' }; }
@@ -296,7 +308,17 @@ ipcMain.handle('staging:add', async () => {
   // (undefined) and saw no skipped/pruned lists at all — so adding archives
   // reported nothing, and later reported "Mod version already added" for files
   // that had in fact just been added.
-  return { success: true, ...(await modManager.addToStaging(result.filePaths)) };
+  // Tell the window what is being copied, so a large archive shows progress
+  // instead of looking like the click did nothing.
+  const send = d => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('staging:add-progress', d); };
+  send({ active: true, index: 0, total: result.filePaths.length, name: '', percent: 0 });
+  try {
+    return { success: true, ...(await modManager.addToStaging(result.filePaths, p => send({ active: true, ...p }))) };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    send({ active: false });
+  }
 });
 ipcMain.handle('staging:remove', async (_, f) => {
   try { return await modManager.removeFromStaging(f); }
@@ -501,6 +523,7 @@ ipcMain.handle('dialog:open-folder', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('dialog:open-staging', () => { shell.openPath(modManager.getStagingPath()); return { success: true }; });
+ipcMain.handle('dialog:open-old-versions', () => { const p = modManager.getOldVersionsPath(); try { fs.mkdirSync(p, { recursive: true }); } catch {} shell.openPath(p); return { success: true }; });
 ipcMain.handle('dialog:open-appdata', () => { shell.openPath(app.getPath('userData')); return { success: true }; });
 ipcMain.handle('dialog:open-saves', () => {
   const savePath = path.join(app.getPath('home'), 'AppData', 'LocalLow', 'OPNeonGames', 'Card Shop Simulator');

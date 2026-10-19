@@ -14,15 +14,15 @@
   --bg-deep: #0e1014; --bg-base: #121519; --bg-surface: #14181e; --bg-elevated: #1c232c;
   --bg-hover: #222a34; --bg-active: #2a3340;
 
-  --accent: #e8a33d; --accent-dim: #c46a1f; --accent-glow: rgba(232,163,61,.25);
+  --accent: #ff8a3d; --accent-dim: #d9661f; --accent-glow: rgba(255,138,61,.25);
   /* Tinted fills for badges and quiet buttons — never a solid accent block. */
-  --accent-soft: rgba(232,163,61,.12); --accent-border: rgba(232,163,61,.30);
-  --on-accent: #17120a;
+  --accent-soft: rgba(255,138,61,.12); --accent-border: rgba(255,138,61,.30);
+  --on-accent: #1c0f05;
 
   --green: #2f9c4e; --green-bright: #46c46a;
   --green-soft: rgba(70,196,106,.12); --green-border: rgba(70,196,106,.30);
-  --red: #a33a32; --red-bright: #e06a60;
-  --red-soft: rgba(199,62,53,.10); --red-border: rgba(199,62,53,.32);
+  --red: #a3324f; --red-bright: #f0637f;
+  --red-soft: rgba(240,99,127,.10); --red-border: rgba(240,99,127,.32);
   --info: #4a7fc1; --info-bright: #6fa8e8;
   --info-soft: rgba(111,168,232,.12); --info-border: rgba(111,168,232,.28);
 
@@ -107,6 +107,8 @@ input, select, textarea { font-family: var(--font); outline: none; }
 .btn-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
 .btn-quiet { background: transparent; border-color: transparent; color: var(--text-3); }
 .btn-quiet:hover:not(:disabled) { background: var(--bg-elevated); color: var(--text); }
+.btn-outline-accent { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent); font-weight: 600; }
+.btn-outline-accent:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn-sm { height: 32px; padding: 0 12px; font-size: 13px; border-radius: var(--radius-sm); }
 .btn-icon { width: 34px; height: 34px; padding: 0; border-radius: var(--radius-sm); }
 .btn-icon.btn-sm { width: 32px; height: 32px; }
@@ -162,6 +164,11 @@ input, select, textarea { font-family: var(--font); outline: none; }
 .pill-success { background: var(--green-soft); border-color: var(--green-border); color: var(--green-bright); }
 .pill-danger { background: var(--red-soft); border-color: var(--red-border); color: var(--red-bright); }
 .pill-info { background: var(--info-soft); border-color: var(--info-border); color: var(--info-bright); }
+/* A pill that is also a button: pointer, and a clear hover so it reads as clickable. */
+.pill-btn { cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 600; transition: background .15s, color .15s, border-color .15s, box-shadow .15s; }
+.pill-btn:hover { animation: none; border-color: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); }
+.pill-info.pill-btn:hover { background: var(--info-bright); border-color: var(--info-bright); color: var(--bg-base); }
+.pill-btn:focus-visible { outline: none; box-shadow: var(--ring); }
 
 /* Status dot with a soft ring — used by Mod Status. */
 .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
@@ -200,6 +207,12 @@ input, select, textarea { font-family: var(--font); outline: none; }
   z-index: 9999; box-shadow: var(--shadow-2);
   animation: slideDown .2s ease; pointer-events: none;
   background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border-2);
+}
+.add-progress {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60; width: 360px; max-width: calc(100vw - 40px);
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: var(--bg-surface); border: 1px solid var(--border-2); border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); animation: fadeIn .15s ease;
 }
 .toast::before { content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--text-3); }
 .toast-success::before { background: var(--green-bright); }

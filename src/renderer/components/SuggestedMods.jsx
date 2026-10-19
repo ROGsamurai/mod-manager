@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useI18n } from '../i18n';
+import logoImg from '../assets/logo.png';
 
 /**
  * Bundles: everything a themed mod pack needs, in the order it should be set up.
@@ -116,80 +117,84 @@ export default function SuggestedMods({ mods = [] }) {
   // just a tinted rectangle.
   const rolePill = { pack: 'pill pill-info', required: 'pill pill-accent', recommended: 'pill' };
 
-  const renderBundle = b => {
-            const expanded = open === b.id;
-            // A pack either lists its files (the Pokemon pack's eight) or is one
-            // archive itself (each sports collection).
-            const mainCount = b.mods.reduce((n, m) => n + (m.files ? m.files.length : (m.role === 'pack' ? 1 : 0)), 0);
-            const requiredCount = b.mods.filter(m => m.role === 'required').length;
-            const recommendedCount = b.mods.filter(m => m.role === 'recommended').length;
-            const installedCount = countInstalled(b);
-            const totalCount = countTotal(b);
-            return (
-              <div key={b.id} className={`card${expanded ? ' card-accent' : ''}`} style={{ padding: 0, overflow: 'hidden' }}>
-                <button type="button" onClick={() => setOpen(expanded ? null : b.id)} aria-expanded={expanded}
-                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', width: '100%',
-                    background: 'transparent', textAlign: 'left', color: 'inherit' }}>
-                  <div style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 11, background: 'var(--bg-elevated)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
-                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 7l8-4 8 4v10l-8 4-8-4z" /><path d="M4 7l8 4 8-4" /><path d="M12 11v10" />
-                    </svg>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                      <span style={{ fontSize: 15.5, fontWeight: 700 }}>{b.name}</span>
-                      {/* Same colour coding as the rows below: the pack is blue,
-                          required amber, recommended plain, installed green. */}
-                      {mainCount > 0 && <span className="pill pill-info">{mainCount} {t('Main')}</span>}
-                      {requiredCount > 0 && <span className="pill pill-accent">{requiredCount} {t('Required')}</span>}
-                      {recommendedCount > 0 && <span className="pill">{recommendedCount} {t('Recommended')}</span>}
-                      <span className={`pill ${installedCount > 0 ? 'pill-success' : ''}`}>
-                        {installedCount} {t('Installed')}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4, lineHeight: 1.5 }}>{b.blurb}</div>
-                  </div>
-                  <span className="btn btn-ghost btn-sm btn-icon" style={{ flexShrink: 0, pointerEvents: 'none' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-                      style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><path d="M6 9l6 6 6-6" /></svg>
-                  </span>
-                </button>
-
-                {expanded && (
-                  <div style={{ borderTop: '1px solid var(--border)', padding: '6px 16px 12px' }}>
-                    {b.mods.map((m, i) => (
-                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0',
-                        borderBottom: i < b.mods.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <span style={{ width: 96, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                          <span className={rolePill[m.role]} style={{ width: '100%', justifyContent: 'center' }}>
-                            {roleLabel[m.role]}
-                          </span>
-                          {m.files
-                            ? (m.files.some(isInstalled) && (
-                                <span className={`pill ${entryInstalled(m) ? 'pill-success' : 'pill-accent'}`} style={{ width: '100%', justifyContent: 'center' }}>
-                                  {m.files.filter(isInstalled).length}/{m.files.length}
-                                </span>
-                              ))
-                            : (entryInstalled(m) && (
-                                <span className="pill pill-success" style={{ width: '100%', justifyContent: 'center' }}>{t('Installed')}</span>
-                              ))}
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600 }}>{m.name}</span>
-                          {m.note && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-3)', marginTop: 2 }}>{m.note}</span>}
-                        </span>
-                        <button className="btn btn-accent btn-sm" style={{ flexShrink: 0 }}
-                          onClick={() => window.api.openUrl(nexusUrl(m.id))}>
-                          {t('Get Mod')}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
+  // One card per bundle: banner, status, progress through its files and
+  // requirements. The full list opens underneath the cards.
+  const renderCard = b => {
+    const expanded = open === b.id;
+    // Progress counts what the pack needs — its own files and its
+    // requirements. Recommended mods are optional, so they don't count as missing.
+    const needed = { ...b, mods: b.mods.filter(m => m.role !== 'recommended') };
+    const have = countInstalled(needed);
+    const total = countTotal(needed);
+    const complete = have === total;
+    const status = complete ? { cls: 'pill pill-success', text: t('Complete') }
+      : have === 0 ? { cls: 'pill', text: t('Not installed') }
+      : { cls: 'pill pill-accent', text: `${total - have} ${t('missing')}` };
+    const pct = total ? Math.round(have / total * 100) : 0;
+    return (
+      <article key={b.id} className={`card${expanded ? ' card-accent' : ''}`} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div aria-hidden="true" style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'radial-gradient(120% 120% at 50% 0%, var(--accent-soft) 0%, var(--bg-elevated) 70%)', borderBottom: '1px solid var(--border)' }}>
+          <img src={logoImg} alt="" style={{ height: 112, width: 112, objectFit: 'contain' }} />
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+          <div><span className={status.cls}>{status.text}</span></div>
+          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>{b.name}</h2>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>{b.blurb}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-3)' }}>
+              <span>{t('Files and requirements')}</span><span className="mono">{have} / {total}</span>
+            </div>
+            <div className="progress"><div className="bar" style={{ width: `${pct}%`, background: complete ? 'var(--green-bright)' : 'linear-gradient(90deg, var(--info), var(--info-bright))' }} /></div>
+          </div>
+          <button type="button" onClick={() => setOpen(expanded ? null : b.id)} aria-expanded={expanded}
+            className={`btn ${complete || expanded ? 'btn-ghost' : 'btn-accent'}`} style={{ marginTop: 'auto', justifyContent: 'center' }}>
+            {expanded ? t('Hide list') : complete ? t('Show the list') : t("Show what's needed")}
+          </button>
+        </div>
+      </article>
+    );
   };
+
+  const renderDetails = b => (
+    <div className="card card-accent" style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <span style={{ fontSize: 15.5, fontWeight: 700 }}>{b.name}</span>
+        <button type="button" className="btn btn-quiet btn-sm" onClick={() => setOpen(null)}>{t('Close')}</button>
+      </div>
+      <div style={{ padding: '6px 16px 12px' }}>
+        {b.mods.map((m, i) => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0',
+            borderBottom: i < b.mods.length - 1 ? '1px solid var(--border)' : 'none' }}>
+            <span style={{ width: 96, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              {!entryInstalled(m) && (
+                <span className={rolePill[m.role]} style={{ width: '100%', justifyContent: 'center' }}>
+                  {roleLabel[m.role]}
+                </span>
+              )}
+              {m.files
+                ? (m.files.some(isInstalled) && (
+                    <span className={`pill ${entryInstalled(m) ? 'pill-success' : 'pill-accent'}`} style={{ width: '100%', justifyContent: 'center' }}>
+                      {m.files.filter(isInstalled).length}/{m.files.length}
+                    </span>
+                  ))
+                : (entryInstalled(m) && (
+                    <span className="pill pill-success" style={{ width: '100%', justifyContent: 'center' }}>{t('Installed')}</span>
+                  ))}
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600 }}>{m.name}</span>
+              {m.note && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-3)', marginTop: 2 }}>{m.note}</span>}
+            </span>
+            <button className="btn btn-accent btn-sm" style={{ flexShrink: 0 }}
+              onClick={() => window.api.openUrl(nexusUrl(m.id))}>
+              {t('Get Mod')}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -201,9 +206,12 @@ export default function SuggestedMods({ mods = [] }) {
       <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 24px' }}>
 
         {/* Bundles */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {BUNDLES.map(renderBundle)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          {BUNDLES.map(renderCard)}
         </div>
+        {open && BUNDLES.find(b => b.id === open) && (
+          <div style={{ marginTop: 16 }}>{renderDetails(BUNDLES.find(b => b.id === open))}</div>
+        )}
 
 
       </div>

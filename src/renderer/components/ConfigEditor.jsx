@@ -126,10 +126,11 @@ function ConfigEntry({ entry, section, saving, onSave }) {
           <div onClick={() => { const nv = val === 'true' ? 'false' : 'true'; setVal(nv); onSave(section, entry.key, nv); entry.value = nv; }}
             style={{
               width: 44, height: 24, borderRadius: 12, cursor: 'pointer', transition: 'all .15s', position: 'relative',
-              background: val === 'true' ? 'var(--green)' : 'var(--bg-active)',
+              background: val === 'true' ? 'var(--accent)' : 'var(--bg-active)',
+              border: `1px solid ${val === 'true' ? 'var(--accent)' : 'var(--border-2)'}`, boxSizing: 'border-box',
             }}>
             <div style={{
-              width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3,
+              width: 16, height: 16, borderRadius: '50%', background: val === 'true' ? 'var(--on-accent)' : 'var(--text-3)', position: 'absolute', top: 3,
               left: val === 'true' ? 23 : 3, transition: 'left .15s',
             }} />
           </div>

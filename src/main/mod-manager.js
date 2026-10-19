@@ -298,7 +298,11 @@ class ModManager {
       if (mod.filename && (!mod.version || mod.version === '')) {
         const parsed = this._parseNexusFilename(mod.filename);
         if (parsed.version) { mod.version = parsed.version; changed = true; }
-        if (parsed.name && mod.name === mod.filename.replace(/\.(zip|rar|7z)$/i, '')) {
+        // A name that is just the archive name (with or without a "(1)" copy
+        // suffix) was never parsed: replace it. This also repairs mods
+        // installed while the parser missed a download-hash form.
+        const rawBase = mod.filename.replace(/\.(zip|rar|7z)$/i, '');
+        if (parsed.name && (mod.name === rawBase || mod.name === this._stripDuplicateSuffix(rawBase))) {
           mod.name = parsed.name; changed = true;
         }
       }
@@ -1122,7 +1126,38 @@ class ModManager {
       };
     }
     if (!this.isBepInExInstalled()) return { installed: false, gameFound: true, reason: 'BepInEx was not found in the game folder. Install Pre-configured BepInEx from the Getting Started tab.', ...this._duplicateStatus() };
-    return { installed: true, gameFound: true, ...this._duplicateStatus() };
+    return { installed: true, gameFound: true, version: this._bepinexVersion(), ...this._duplicateStatus() };
+  }
+
+  /**
+   * BepInEx's own version, read from the version resource of its core DLL
+   * (BepInEx 5: core/BepInEx.dll, BepInEx 6: core/BepInEx.Core.dll). The
+   * resource stores "ProductVersion" / "FileVersion" as UTF-16 key-value
+   * strings, so a byte search finds them without a PE parser. Cached by mtime.
+   */
+  _bepinexVersion() {
+    try {
+      const core = path.join(this.gamePath, 'BepInEx', 'core');
+      const dll = ['BepInEx.dll', 'BepInEx.Core.dll'].map(f => path.join(core, f)).find(f => fs.existsSync(f));
+      if (!dll) return null;
+      const st = fs.statSync(dll);
+      const key = `${dll}|${st.mtimeMs}`;
+      if (this._bepVerCache?.key === key) return this._bepVerCache.value;
+      const buf = fs.readFileSync(dll);
+      let value = null;
+      for (const name of ['ProductVersion', 'FileVersion']) {
+        const at = buf.indexOf(Buffer.from(name + '\0', 'utf16le'));
+        if (at < 0) continue;
+        let i = at + (name.length + 1) * 2;
+        while (i + 1 < buf.length && buf.readUInt16LE(i) === 0) i += 2;
+        let str = '';
+        while (i + 1 < buf.length && str.length < 64) { const c = buf.readUInt16LE(i); if (!c) break; str += String.fromCharCode(c); i += 2; }
+        const m = /\d+(?:\.\d+){1,3}/.exec(str);
+        if (m) { value = m[0]; break; }
+      }
+      this._bepVerCache = { key, value };
+      return value;
+    } catch { return null; }
   }
 
   /**
@@ -1657,7 +1692,18 @@ class ModManager {
     const isTsTok   = (tk) => !!tk && /^\d{4}-\d{2}-\d{2}(t[\dhms.:\-]*z?)?$/i.test(tk); // 2026-07-07 or 2026-07-07T22-24Z
     const isMetaTok = (tk) => isVerTok(tk) || isIntTok(tk) || isTsTok(tk);
     const tokens = work.split(/\s+/);
-    if (tokens.length >= 3 && isHashTok(tokens[tokens.length - 1]) && isMetaTok(tokens[tokens.length - 2])) {
+    // A hash can also be letters only with its lowercase at the end
+    // ("HTCZLHQqc"), which the shape test above misses. Accept any 6–16 char
+    // alphanumeric token when what precedes it is unmistakably Nexus metadata:
+    // a build timestamp, or a mod id followed by a version.
+    const n = tokens.length;
+    // After an id and version, a plain word ("Remastered", "FINAL") is still
+    // treated as part of the name; after a timestamp, anything goes.
+    const lastTok = tokens[n - 1] || '';
+    const plainWord = /^[A-Z]?[a-z]+$/.test(lastTok) || /^[A-Z]+$/.test(lastTok);
+    const strongMeta = n >= 3 && (isTsTok(tokens[n - 2]) || (isVerTok(tokens[n - 2]) && isIntTok(tokens[n - 3]) && !plainWord));
+    const hashLast = isHashTok(lastTok) || (strongMeta && /^[A-Za-z0-9]{6,16}$/.test(lastTok));
+    if (n >= 3 && hashLast && isMetaTok(tokens[n - 2])) {
       tokens.pop();                                                                     // random download hash
       if (isTsTok(tokens[tokens.length - 1])) tokens.pop();                             // optional build timestamp
       if (isVerTok(tokens[tokens.length - 1]) || isIntTok(tokens[tokens.length - 1])) version = tokens.pop(); // version
@@ -1681,6 +1727,76 @@ class ModManager {
 
   /** How many versions of the same mod to keep in the staging folder. */
   static get STAGING_KEEP_VERSIONS() { return 2; }
+
+  /** Subfolder of the staging folder that older versions move into after an update. */
+  static get OLD_VERSIONS_FOLDER() { return 'Old Versions'; }
+  /** Older versions of each mod kept in Old Versions; one keeps disk use down. */
+  static get OLD_VERSIONS_KEEP() { return 1; }
+  getOldVersionsPath() { return path.join(this.getStagingPath(), ModManager.OLD_VERSIONS_FOLDER); }
+
+  /**
+   * Move one staged archive into Old Versions. A file of the same name already
+   * there is replaced. Returns true when the file left the staging folder.
+   * Old Versions is a subfolder, so the staging list and its watcher (depth 0,
+   * archives only) never show what is in it; dragging a file back out restores it.
+   */
+  _moveToOldVersions(filename) {
+    const src = path.join(this.getStagingPath(), filename);
+    const dest = path.join(this.getOldVersionsPath(), filename);
+    try {
+      fs.ensureDirSync(this.getOldVersionsPath());
+      fs.moveSync(src, dest, { overwrite: true });
+      console.log(`[staging] moved to ${ModManager.OLD_VERSIONS_FOLDER}: ${filename}`);
+      return true;
+    } catch (err) {
+      console.warn(`[staging] could not move ${filename} to ${ModManager.OLD_VERSIONS_FOLDER}:`, err.message);
+      return false;
+    }
+  }
+
+  /**
+   * After a mod is installed, move every staged archive of an OLDER version of
+   * the same mod into Old Versions, so Staged only shows what is still worth
+   * installing. Archives the parser can't read a version from stay put. Old
+   * Versions itself keeps the newest OLD_VERSIONS_KEEP version of each mod;
+   * anything older goes to the Recycle Bin.
+   */
+  async moveOlderStagedVersions(modName, version) {
+    const key = this._baseName(modName);
+    if (!key || !version) return [];
+    const dir = this.getStagingPath();
+    let entries = [];
+    try { entries = fs.readdirSync(dir).filter(f => /\.(zip|rar|7z)$/i.test(f)); } catch { return []; }
+    const moved = [];
+    for (const f of entries) {
+      const p = this._parseNexusFilename(f);
+      if (!p?.version || this._baseName(p.name) !== key) continue;
+      if (this._compareVersions(p.version, version) >= 0) continue;
+      if (this._moveToOldVersions(f)) moved.push(f);
+    }
+    if (moved.length) await this._trimOldVersions(key);
+    return moved;
+  }
+
+  /** Keep only the newest OLD_VERSIONS_KEEP version(s) of one mod in Old Versions. */
+  async _trimOldVersions(key) {
+    const dir = this.getOldVersionsPath();
+    let entries = [];
+    try { entries = fs.readdirSync(dir).filter(f => /\.(zip|rar|7z)$/i.test(f)); } catch { return; }
+    const byVersion = new Map();
+    for (const f of entries) {
+      const p = this._parseNexusFilename(f);
+      if (!p?.version || this._baseName(p.name) !== key) continue;
+      if (!byVersion.has(p.version)) byVersion.set(p.version, []);
+      byVersion.get(p.version).push(f);
+    }
+    const ordered = [...byVersion.keys()].sort((a, b) => this._compareVersions(b, a));
+    for (const v of ordered.slice(ModManager.OLD_VERSIONS_KEEP)) {
+      for (const f of byVersion.get(v)) {
+        if (await this._toRecycleBin(path.join(dir, f))) console.log(`[staging] recycled old version from ${ModManager.OLD_VERSIONS_FOLDER}: ${f}`);
+      }
+    }
+  }
 
   /**
    * Delete stale archives from the staging folder.
@@ -1810,17 +1926,54 @@ class ModManager {
             console.log(`[staging] keeping ${filename} — it is the installed version`);
             continue;
           }
-          if (await this._toRecycleBin(path.join(dir, filename))) {
-            removed.push(filename);
-            console.log(`[staging] recycled old version: ${filename} (${key} v${version})`);
-          }
+          if (this._moveToOldVersions(filename)) removed.push(filename);
         }
       }
+      await this._trimOldVersions(key);
     }
     return removed;
   }
 
-  async addToStaging(filePaths) {
+  /**
+   * Move an archive into the staging folder. A rename is instant on the same
+   * drive; across drives the file is streamed so a multi-gigabyte archive
+   * reports progress instead of looking like nothing is happening, and the
+   * source is removed once the copy is complete.
+   */
+  async _moveWithProgress(src, dest, onPct) {
+    try {
+      if (fs.existsSync(dest)) await fs.remove(dest);
+      await fs.rename(src, dest);
+      onPct(100);
+      return;
+    } catch (err) {
+      if (err.code !== 'EXDEV' && err.code !== 'EPERM' && err.code !== 'EACCES') {
+        // Not a cross-drive move: let fs-extra try (it handles other cases).
+        await fs.move(src, dest, { overwrite: true });
+        onPct(100);
+        return;
+      }
+    }
+    const total = (await fs.stat(src)).size || 1;
+    const tmp = `${dest}.part`;
+    await new Promise((resolve, reject) => {
+      let done = 0, last = -1;
+      const rs = fs.createReadStream(src);
+      const ws = fs.createWriteStream(tmp);
+      rs.on('data', chunk => {
+        done += chunk.length;
+        const pct = Math.floor((done / total) * 100);
+        if (pct !== last) { last = pct; onPct(pct); }
+      });
+      rs.on('error', reject); ws.on('error', reject);
+      ws.on('finish', resolve);
+      rs.pipe(ws);
+    }).catch(async e => { try { await fs.remove(tmp); } catch {} throw e; });
+    await fs.move(tmp, dest, { overwrite: true });
+    try { await fs.remove(src); } catch {}
+  }
+
+  async addToStaging(filePaths, onProgress = () => {}) {
     const dir = this.getStagingPath();
     fs.ensureDirSync(dir);
 
@@ -1860,13 +2013,9 @@ class ModManager {
         await this._toRecycleBin(path.join(dir, twin));
       }
 
-      try {
-        await fs.move(src, dest, { overwrite: true });
-      } catch {
-        // Move fails across drives — fall back to copy + delete
-        await fs.copy(src, dest, { overwrite: true });
-        try { await fs.remove(src); } catch {}
-      }
+      const idx = filePaths.indexOf(src);
+      onProgress({ index: idx + 1, total: filePaths.length, name: displayName, percent: 0 });
+      await this._moveWithProgress(src, dest, pct => onProgress({ index: idx + 1, total: filePaths.length, name: displayName, percent: pct }));
 
       if (wasThere || (twin && twin !== destName)) {
         replaced.push({ filename: destName, of: twin || destName, name: displayName });
@@ -2999,6 +3148,10 @@ class ModManager {
       if (fs.existsSync(zipPath)) await this._toRecycleBin(zipPath);
     }
 
+    // An update leaves the previous version's archive in Staged, where it shows
+    // as a Downgrade row. Move older versions of this mod into Old Versions.
+    try { await this.moveOlderStagedVersions(name, version); } catch (err) { console.warn('[staging] moving old versions failed:', err.message); }
+
     // Installing is the other moment the staging folder gains a version, so keep
     // it trimmed here as well as on add.
     try { await this.pruneStagingVersions(); } catch (err) { console.warn('[staging] prune failed:', err.message); }
@@ -3771,7 +3924,8 @@ class ModManager {
     const mod = this.mods.get(modId);
     if (!mod) throw new Error(`Mod not found: ${modId}`);
     this._requireGameFolder(mod.enabled ? 'disable mods' : 'enable mods');
-    if (mod.core && !opts.allowCore) throw new Error(`"${mod.name}" is a core mod and cannot be disabled.`);
+    // Core locking was removed from the UI: every mod can be switched on and off.
+    // `core` stays on the record for older data but no longer blocks anything.
 
     // Progress reporting: large mods (e.g. Pokemon Expansions ~906 files) take a
     // noticeable moment to move every file. Emit (done, total) so the UI can show
