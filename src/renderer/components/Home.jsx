@@ -39,10 +39,12 @@ export default function Home({ mods, staged, updates = {}, conflicts = [], bepin
   const chip = tone === 'ok' ? 'pill pill-success' : tone === 'warn' ? 'pill pill-accent' : 'pill pill-danger';
   const chipText = tone === 'ok' ? t('Ready to play') : tone === 'warn' ? t('Check before playing') : t('Not ready');
 
-  const Tile = ({ n, label, color, onClick }) => (
+  // A count above zero is drawn in the tile's own colour (number and border);
+  // zero keeps the plain look.
+  const Tile = ({ n, label, tone, onClick }) => (
     <button type="button" onClick={onClick} className="card card-hover"
-      style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: onClick ? 'pointer' : 'default', textAlign: 'left', color: 'inherit', font: 'inherit' }}>
-      <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: color || 'var(--text)' }}>{n}</span>
+      style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, cursor: onClick ? 'pointer' : 'default', textAlign: 'left', color: 'inherit', font: 'inherit', ...(n > 0 ? { borderColor: `var(--${tone}-border)` } : null) }}>
+      <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.1, color: n > 0 ? (tone === 'accent' ? 'var(--accent)' : `var(--${tone}-bright)`) : 'var(--text)' }}>{n}</span>
       <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{label}</span>
     </button>
   );
@@ -75,10 +77,10 @@ export default function Home({ mods, staged, updates = {}, conflicts = [], bepin
       </section>
 
       <section aria-label={t('Status')} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-        <Tile n={enabled} label={t('Mods Active')} onClick={() => onNav('mods', { filter: 'All' })} />
-        <Tile n={updateList.length} label={t('Updates available')} color={updateList.length ? 'var(--info-bright)' : undefined} onClick={() => onNav('mods', { filter: 'Updates' })} />
-        <Tile n={problems} label={t('Problems')} color={problems ? 'var(--accent)' : undefined} onClick={() => onNav('mods', { filter: 'Issues' })} />
-        <Tile n={staged.length} label={t('Staged')} onClick={() => onNav('staging')} />
+        <Tile n={enabled} tone="green" label={t('Mods Active')} onClick={() => onNav('mods', { filter: 'All' })} />
+        <Tile n={updateList.length} tone="info" label={t('Updates available')} onClick={() => onNav('mods', { filter: 'Updates' })} />
+        <Tile n={problems} tone="red" label={t('Problems')} onClick={() => onNav('mods', { filter: 'Issues' })} />
+        <Tile n={staged.length} tone="accent" label={t('Staged')} onClick={() => onNav('staging')} />
       </section>
 
       {logSummary && logSummary.exists && logSummary.counts.errors > 0 && (

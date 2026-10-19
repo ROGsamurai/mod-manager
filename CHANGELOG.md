@@ -1,4 +1,4 @@
-Unreleased
+Version 2.0.6
 NEW
 - Home page. It opens first and says whether the game is ready to play — or what to fix first — with Play, Install from file and Open Game Folder, tiles for active mods, updates, problems and staged archives that open Installed on the matching tab (All, Updates, Issues) or Staged, the full list of updates, and a warning when the last game session logged an error
 - Game Log page. Reads BepInEx's LogOutput.log from the last time the game ran and shows errors, warnings and plugins loaded, groups the problems by the mod they came from, expands an error to its stack trace, follows the log live while the game runs, and copies a ready-to-paste report. The sidebar shows the error count next to Game Log
@@ -10,6 +10,7 @@ CHANGED
 - Installed has quick filters with counts for All, Updates, Issues and Off, a switch to turn each mod on or off, and the install folder under each mod's name
 - Midnight uses the Real TCG Overhaul logo orange as its accent, with a rose red for blocked and destructive actions so the two stay distinct. The Play button moved from the title bar to the sidebar, and the mod, active and staged counts left the title bar
 - Switches in Installed and the Config Editor use the theme's accent colour
+- Home's tiles show their number and border in colour when the count is above zero: Mods Active green, Updates blue, Problems red, Staged in the theme's accent
 - Home shows each update as two pills, the installed version in grey and the new one in the theme's accent colour
 - Staged shows the MOD icon beside each archive, and Add Archives is now Install from file
 - Install from file installs the archives you pick straight away, through the same checks and build popups as the Install button, instead of only adding them to Staged. Without a game folder they are only staged
