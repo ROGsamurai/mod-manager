@@ -45,7 +45,9 @@ export default function InstalledMods({ openFilter, mods, conflicts, updates = {
     for (const id of Object.keys(m)) out[id] = { others: [...m[id].others], files: [...m[id].files] };
     return out;
   }, [conflicts]);
-  const depMap = useMemo(() => { const m = {}; depWarnings.forEach(w => { if (!m[w.modId]) m[w.modId] = []; m[w.modId].push(w.missingDep); }); return m; }, [depWarnings]);
+  const depMap = useMemo(() => { const m = {}; depWarnings.forEach(w => { if (!w.missingDep) return; if (!m[w.modId]) m[w.modId] = []; m[w.modId].push(w.missingDep); }); return m; }, [depWarnings]);
+  // Enhanced Prefab Loader / TextureReplacer builds made for the other game renderer.
+  const buildMap = useMemo(() => { const m = {}; depWarnings.forEach(w => { if (w.wrongBuild) m[w.modId] = w.wrongBuild; }); return m; }, [depWarnings]);
 
   // Pin "Main Core Mods" to the top regardless of stored group order.
   // The user can still reorder other groups freely; Main Core always stays first.
@@ -59,7 +61,7 @@ export default function InstalledMods({ openFilter, mods, conflicts, updates = {
     if (statusF === 'Enabled' && !m.enabled) return false;
     if (statusF === 'Disabled' && m.enabled) return false;
     if (statusF === 'Updates' && !updates[m.id]) return false;
-    if (statusF === 'Issues' && !(depMap[m.id]?.length || conflictIds.has(m.id))) return false;
+    if (statusF === 'Issues' && !(depMap[m.id]?.length || buildMap[m.id] || conflictIds.has(m.id))) return false;
     if (search && !m.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }), [mods, statusF, search, updates, depMap, conflictIds]);
@@ -158,7 +160,7 @@ export default function InstalledMods({ openFilter, mods, conflicts, updates = {
   };
 
   const rowProps = (m, i) => ({
-    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id], update: updates[m.id], latest: latestVersions[m.id],
+    key: m.id, mod: m, i, conflict: conflictIds.has(m.id), conflictInfo: conflictMap[m.id], missingDeps: depMap[m.id], wrongBuild: buildMap[m.id], update: updates[m.id], latest: latestVersions[m.id],
     onToggle: () => onToggle(m.id), onRemove: () => onRemove(m.id), onMarkCore: c => onMarkCore(m.id, c),
     selected: selected.has(m.id), onSelect: () => toggleSelect(m.id), t, tMod,
     busy: togglingId === m.id,
@@ -184,7 +186,7 @@ export default function InstalledMods({ openFilter, mods, conflicts, updates = {
         {[
           ['All', t('All'), mods.length],
           ['Updates', t('Updates'), mods.filter(m => updates[m.id]).length],
-          ['Issues', t('Issues'), mods.filter(m => depMap[m.id]?.length || conflictIds.has(m.id)).length],
+          ['Issues', t('Issues'), mods.filter(m => depMap[m.id]?.length || buildMap[m.id] || conflictIds.has(m.id)).length],
           ['Disabled', t('Off'), mods.filter(m => !m.enabled).length],
         ].map(([id, label, n]) => (
           <button key={id} type="button" role="tab" aria-selected={statusF === id} onClick={() => setStatusF(id)}
@@ -339,7 +341,7 @@ function FL({ label, children, style }) {
   </div>;
 }
 
-function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
+function Row({ mod, i, conflict, conflictInfo, missingDeps, wrongBuild, update, latest, onToggle, onRemove, onMarkCore, selected, onSelect, hasCheckbox, t, tMod, busy, progress, anyToggling, isEditingName, modEditName, onNameEditStart, onNameEditChange, onNameEditSave, onNameEditCancel }) {
   const [h, setH] = useState(false);
   const isRoot = mod.targetKey === 'game_root' || mod.targetKey === 'bepinex';
   const translatedName = tMod(mod.name, '').name;
@@ -354,7 +356,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
     : '';
   return (
     <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
-      className={`card${selected ? ' card-accent' : ''}${hasDeps ? ' card-accent' : ''}`}
+      className={`card${selected ? ' card-accent' : ''}${wrongBuild ? ' card-danger' : hasDeps ? ' card-accent' : ''}`}
       style={{ display: 'flex', padding: '10px 16px', alignItems: 'center', fontSize: 15, position: 'relative', overflow: 'hidden',
         margin: '0 24px 8px', opacity: mod.enabled === false ? .62 : 1,
         animation: `fadeIn .15s ease ${i * .015}s both`,
@@ -413,6 +415,12 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
         {!isEditingName && mod.targetLabel && (
           <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }} title={t(mod.targetLabel)}>{t(mod.targetLabel)}</div>
         )}
+        {wrongBuild && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 12, color: 'var(--red-bright)', marginTop: 3 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" style={{ marginTop: 2, flexShrink: 0 }}><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>
+            <span>{t('Wrong build for your game')} ({wrongBuild.game}) — {t('use')} {wrongBuild.need}</span>
+          </div>
+        )}
         {hasDeps && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--accent)', marginTop: 3 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
@@ -427,7 +435,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
       </div>
       <div style={{ width: 90 }}>
         {mod.version
-          ? <span className="badge badge-accent">{mod.version}</span>
+          ? <span className="badge badge-accent" title={mod.manualUpdateFrom ? `${t('Updated outside the manager')}: ${mod.manualUpdateFrom} → ${mod.version}` : undefined}>{mod.version}</span>
           : <span className="mono" style={{ color: 'var(--text-4)', fontSize: 12.5 }}>—</span>}
       </div>
       <div style={{ width: 134, marginLeft: 28 }}>
@@ -447,7 +455,10 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, update, latest, onTo
       </div>
       <div className="mono" style={{ width: 60, textAlign: 'center', color: 'var(--text-4)', fontSize: 12 }}>{mod.fileCount || '—'}</div>
       <div style={{ width: 60, textAlign: 'center' }}>
-        {hasDeps ? <span title={`${t('Missing')}: ${missingDeps.join(', ')}`} style={{ color: 'var(--accent)', cursor: 'help', display: 'inline-flex' }}>
+        {wrongBuild ? <span title={`${t('Wrong build for your game')} (${wrongBuild.game}) — ${t('use')} ${wrongBuild.need}`} style={{ color: 'var(--red-bright)', cursor: 'help', display: 'inline-flex' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></svg>
+          </span> :
+         hasDeps ? <span title={`${t('Missing')}: ${missingDeps.join(', ')}`} style={{ color: 'var(--accent)', cursor: 'help', display: 'inline-flex' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.5" /></svg>
           </span> :
          hasConflict ? <span title={conflictText} style={{ color: 'var(--info-bright)', cursor: 'help', display: 'inline-flex' }}>

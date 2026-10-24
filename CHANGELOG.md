@@ -1,3 +1,12 @@
+Version 2.0.7
+NEW
+- A wrong Enhanced Prefab Loader or TextureReplacer build for your game shows as a problem: a red line on the mod in Installed saying which build to use, and it counts on Home's Problems tile. Xbox Game Pass and Steam betas named like "1.0newrender" need the New Render builds; Steam's default branch and "1.0classic" need the classic ones. The install popup also recognises the "1.0newrender" beta now
+- Mods updated by hand are picked up. Before each update check, the manager reads the plugin version declared inside each mod's DLL ([BepInPlugin]); when it is newer than the version recorded at install, the mod takes the DLL's version, so the update check compares against what is really installed. A DLL version lower than or equal to the recorded one never replaces it. The version chip's tooltip and a notice say which mods were updated outside the manager
+- Getting Started lists Pokemon Games as the ninth main file of the Pokemon Mod, and the pack is now titled "Pokemon Expansions, Accessories, Figurines, Statues & Games". It needs Enhanced Prefab Loader and is grouped with the other Real TCG Overhaul packs
+
+FIXED
+- The archive a mod was installed from shows as a dimmed Re-install in Staged even after the mod was updated by hand to a newer version, instead of a highlighted Install (downgrade) row
+
 Version 2.0.6
 NEW
 - Home page. It opens first and says whether the game is ready to play — or what to fix first — with Play, Install from file and Open Game Folder, tiles for active mods, updates, problems and staged archives that open Installed on the matching tab (All, Updates, Issues) or Staged, the full list of updates, and a warning when the last game session logged an error

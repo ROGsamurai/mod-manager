@@ -17,10 +17,10 @@ const BUNDLES = [
   {
     id: 'pokemon',
     name: 'Pokemon Mod',
-    blurb: 'Pokemon Expansions, Accessories, Figurines and Statues, plus everything they depend on.',
+    blurb: 'Pokemon Expansions, Accessories, Figurines, Statues and Games, plus everything they depend on.',
     mods: [
-      { name: 'Pokemon Expansions, Accessories, Figurines & Statues', role: 'pack', id: 577,
-        note: 'Download all 8 main files from the Files tab (about 3.5 GB).',
+      { name: 'Pokemon Expansions, Accessories, Figurines, Statues & Games', role: 'pack', id: 577,
+        note: 'Download all 9 main files from the Files tab (about 3.6 GB).',
         // Each main file installs as its own mod, so they are counted and
         // matched individually against what is actually installed.
         files: [
@@ -32,6 +32,7 @@ const BUNDLES = [
           'Pokemon Statues',
           'Pokemon Shop Textures',
           'Pokemon Shop App',
+          'Pokemon Games',
         ] },
 
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },

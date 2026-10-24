@@ -395,6 +395,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"Haz clic en «Instalar desde archivo» arriba para elegir archivos .zip / .rar / .7z, o colócalos en tu carpeta de preparación junto al .exe",
     "Adding archive":"Añadiendo archivo",
     "Still adding the last archive — please wait.":"Todavía se está añadiendo el último archivo; espera un momento.",
+    "Wrong build for your game":"Versión incorrecta para tu juego",
+    "use":"usa",
+    "Updated outside the manager":"Actualizado fuera del gestor",
   },
   fr:{
     "NAVIGATION":"NAVIGATION",
@@ -787,6 +790,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"Cliquez sur « Installer depuis un fichier » ci-dessus pour choisir des fichiers .zip / .rar / .7z, ou déposez-les dans votre dossier de préparation à côté du .exe",
     "Adding archive":"Ajout de l'archive",
     "Still adding the last archive — please wait.":"L'archive précédente est encore en cours d'ajout, veuillez patienter.",
+    "Wrong build for your game":"Mauvaise version pour votre jeu",
+    "use":"utilisez",
+    "Updated outside the manager":"Mis à jour hors du gestionnaire",
   },
   de:{
     "NAVIGATION":"NAVIGATION",
@@ -1178,6 +1184,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"Klicke oben auf „Aus Datei installieren“, um .zip-/.rar-/.7z-Dateien auszuwählen, oder lege sie in deinen Staging-Ordner neben der .exe",
     "Adding archive":"Archiv wird hinzugefügt",
     "Still adding the last archive — please wait.":"Das letzte Archiv wird noch hinzugefügt – bitte warten.",
+    "Wrong build for your game":"Falscher Build für dein Spiel",
+    "use":"verwende",
+    "Updated outside the manager":"Außerhalb des Managers aktualisiert",
   },
   pt:{
     "NAVIGATION":"NAVEGAÇÃO",
@@ -1571,6 +1580,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"Clique em \"Instalar de arquivo\" acima para selecionar arquivos .zip / .rar / .7z, ou coloque-os na sua pasta de preparação ao lado do .exe",
     "Adding archive":"Adicionando arquivo",
     "Still adding the last archive — please wait.":"O último arquivo ainda está sendo adicionado — aguarde.",
+    "Wrong build for your game":"Versão errada para o seu jogo",
+    "use":"use",
+    "Updated outside the manager":"Atualizado fora do gerenciador",
   },
   zh:{
     "NAVIGATION":"导航",
@@ -1964,6 +1976,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"点击上方的“从文件安装”选择 .zip / .rar / .7z 文件，或将其放入 .exe 旁边的暂存文件夹",
     "Adding archive":"正在添加压缩包",
     "Still adding the last archive — please wait.":"上一个压缩包仍在添加中，请稍候。",
+    "Wrong build for your game":"与你的游戏版本不匹配",
+    "use":"请使用",
+    "Updated outside the manager":"已在管理器之外更新",
   },
   ja:{
     "NAVIGATION":"ナビゲーション",
@@ -2355,6 +2370,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"上の「ファイルからインストール」をクリックして .zip / .rar / .7z ファイルを選ぶか、.exe の隣にあるステージングフォルダーに入れてください",
     "Adding archive":"アーカイブを追加中",
     "Still adding the last archive — please wait.":"前のアーカイブを追加中です。しばらくお待ちください。",
+    "Wrong build for your game":"ゲームに合わないビルドです",
+    "use":"使用するもの:",
+    "Updated outside the manager":"マネージャー外で更新済み",
   },
   ko:{
     "NAVIGATION":"탐색",
@@ -2746,6 +2764,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"위의 \"파일에서 설치\"를 클릭해 .zip / .rar / .7z 파일을 선택하거나, .exe 옆의 스테이징 폴더에 넣으세요",
     "Adding archive":"압축 파일 추가 중",
     "Still adding the last archive — please wait.":"이전 압축 파일을 아직 추가하고 있습니다. 잠시 기다려 주세요.",
+    "Wrong build for your game":"게임에 맞지 않는 빌드",
+    "use":"사용할 빌드:",
+    "Updated outside the manager":"매니저 밖에서 업데이트됨",
   },
   ru:{
     "NAVIGATION":"НАВИГАЦИЯ",
@@ -3137,6 +3158,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"Нажмите «Установить из файла» выше, чтобы выбрать файлы .zip / .rar / .7z, или положите их в папку подготовки рядом с .exe",
     "Adding archive":"Добавление архива",
     "Still adding the last archive — please wait.":"Предыдущий архив ещё добавляется — подождите.",
+    "Wrong build for your game":"Неподходящая сборка для вашей игры",
+    "use":"используйте",
+    "Updated outside the manager":"Обновлено вне менеджера",
   },
   it:{
     "NAVIGATION":"NAVIGAZIONE",
@@ -3531,6 +3555,9 @@ const UI = {
     "Click \"Install from file\" above to select .zip / .rar / .7z files, or drop them into your staging folder next to the .exe":"Fai clic su \"Installa da file\" qui sopra per scegliere file .zip / .rar / .7z, oppure mettili nella cartella di staging accanto al .exe",
     "Adding archive":"Aggiunta dell'archivio",
     "Still adding the last archive — please wait.":"L'archivio precedente è ancora in aggiunta, attendi.",
+    "Wrong build for your game":"Build sbagliata per il tuo gioco",
+    "use":"usa",
+    "Updated outside the manager":"Aggiornata fuori dal gestore",
   },
 };
 

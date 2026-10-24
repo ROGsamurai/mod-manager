@@ -497,7 +497,8 @@ export default function StagingView({ autoInstall, onAutoInstallTaken, staged, o
         // Steam's default branch and its "1.0classic" beta both run the classic
         // renderer; other betas are old game versions we can't vouch for.
         const steamClassic = plat === 'steam' && (!beta || beta.toLowerCase() === 'public' || /classic/i.test(beta));
-        const matches = plat === 'gamepass' ? isNew
+        const steamNew = plat === 'steam' && /new\s*render/i.test(beta);
+        const matches = plat === 'gamepass' || steamNew ? isNew
           : steamClassic ? !isNew
           : null;
         const gameLine = plat === 'gamepass' ? t('Your game: Xbox Game Pass')

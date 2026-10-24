@@ -1539,7 +1539,13 @@ class ModManager {
       const sameDownload = !!(inst && inst.filename) && canonName(newest.filename) === canonName(inst.filename);
       const newerDownload = !sameDownload && !!newest.mtime && !isNaN(installedRefMs) && newest.mtime > installedRefMs + 1000;
       let status = 'new';
-      if (inst !== undefined && newest.parsedVersion && installedVersion) {
+      if (inst !== undefined && sameDownload) {
+        // This is the archive the mod was installed from. If the installed
+        // version is now higher, the mod was updated by hand afterwards (its DLL
+        // declares the newer version); the archive is still what was installed,
+        // so it is a Re-install, not a Downgrade.
+        status = 'reinstall';
+      } else if (inst !== undefined && newest.parsedVersion && installedVersion) {
         const cmp = this._compareVersions(newest.parsedVersion, installedVersion);
         if (cmp > 0) status = 'update';
         else if (cmp < 0) status = newerDownload ? 'update' : 'downgrade';
@@ -4464,6 +4470,7 @@ class ModManager {
       'pokemon plushies': ['enhancedprefabloader'],
       'pokemon gameboy games': ['enhancedprefabloader'],
       'pokemon n64 games': ['enhancedprefabloader'],
+      'pokemon games': ['enhancedprefabloader'],
       'pokemon statues': ['enhancedprefabloader'],
       'pokemon shop textures': ['texturereplacer'],
       'rtcgo shop textures': ['texturereplacer'],
@@ -4575,7 +4582,53 @@ class ModManager {
       }
     }
 
+    warnings.push(...this._buildMismatchWarnings());
     return warnings;
+  }
+
+  /**
+   * Which renderer the game in the set folder runs: 'newrender' (Xbox Game Pass,
+   * or a Steam beta named like "1.0newrender"), 'classic' (Steam's default
+   * branch or a "1.0classic" beta), or null when it can't be told.
+   */
+  _gameRenderVariant() {
+    let p = { platform: 'unknown', betaKey: '' };
+    try { p = require('./game-detector').getPlatform(this.gamePath) || p; } catch {}
+    if (p.platform === 'gamepass') return { variant: 'newrender', label: 'Xbox Game Pass' };
+    if (p.platform === 'steam') {
+      const beta = (p.betaKey || '').trim();
+      if (/new\s*render/i.test(beta)) return { variant: 'newrender', label: `Steam ${beta}` };
+      if (!beta || beta.toLowerCase() === 'public') return { variant: 'classic', label: 'Steam default branch' };
+      if (/classic/i.test(beta)) return { variant: 'classic', label: `Steam ${beta}` };
+    }
+    return null;
+  }
+
+  /**
+   * Enhanced Prefab Loader and TextureReplacer each ship one build per game
+   * renderer. A build installed for the other renderer loads but breaks, so
+   * flag it as a problem on that mod's row.
+   *   EPL:            plain = New Render, "(1.0classic)" = classic
+   *   TextureReplacer: plain = classic,   "(Newrender Version)" = New Render
+   */
+  _buildMismatchWarnings() {
+    const game = this._gameRenderVariant();
+    if (!game) return [];
+    const out = [];
+    const ident = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const untagged = n => String(n || '').replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' ');
+    for (const mod of this.mods.values()) {
+      const key = ident(untagged(mod.name));
+      let variant = null, family = null;
+      if (key === 'enhancedprefabloader') { family = 'Enhanced Prefab Loader'; variant = /classic/i.test(mod.name) ? 'classic' : 'newrender'; }
+      else if (key === 'texturereplacer') { family = 'TextureReplacer'; variant = /new\s*render/i.test(mod.name) ? 'newrender' : 'classic'; }
+      if (!family || variant === game.variant) continue;
+      const need = family === 'TextureReplacer'
+        ? (game.variant === 'newrender' ? 'TextureReplacer (Newrender Version)' : 'TextureReplacer (standard build)')
+        : (game.variant === 'newrender' ? 'Enhanced Prefab Loader (New Render build)' : 'EnhancedPrefabLoader (1.0classic)');
+      out.push({ modId: mod.id, modName: mod.name, wrongBuild: { game: game.label, need } });
+    }
+    return out;
   }
 
 
@@ -4618,6 +4671,106 @@ class ModManager {
   _sanitize(n) { return n.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_').slice(0, 80); }
   _loadDb() { this.mods = new Map(Object.entries(store.get('installedMods', {}))); }
   _saveDb() { store.set('installedMods', Object.fromEntries(this.mods)); }
+
+  /**
+   * The [BepInPlugin(guid, name, version)] declarations inside a plugin DLL.
+   * The attribute's arguments are stored in the assembly's blob heap as a
+   * custom-attribute blob: prolog 01 00, three length-prefixed UTF-8 strings,
+   * then a 16-bit named-argument count (00 00). That shape is matched directly,
+   * with the third string required to look like a version, so no .NET metadata
+   * parser is needed. Cached by path, size and mtime.
+   */
+  _readPluginDeclarations(dllPath) {
+    let st;
+    try { st = fs.statSync(dllPath); } catch { return []; }
+    this._pluginDeclCache = this._pluginDeclCache || new Map();
+    const key = `${dllPath}|${st.size}|${st.mtimeMs}`;
+    const hit = this._pluginDeclCache.get(dllPath);
+    if (hit && hit.key === key) return hit.value;
+    let buf;
+    try { buf = fs.readFileSync(dllPath); } catch { return []; }
+    const readStr = (pos) => {
+      if (pos >= buf.length) return null;
+      let len = buf[pos], hdr = 1;
+      if (len === 0xff) return null;                       // null string
+      if ((len & 0x80) !== 0) {                            // 2-byte compressed length
+        if ((len & 0xc0) !== 0x80 || pos + 1 >= buf.length) return null;
+        len = ((len & 0x3f) << 8) | buf[pos + 1]; hdr = 2;
+      }
+      if (len === 0 || len > 200 || pos + hdr + len > buf.length) return null;
+      const s = buf.toString('utf8', pos + hdr, pos + hdr + len);
+      if (/[\x00-\x1f\ufffd]/.test(s)) return null;
+      return { s, next: pos + hdr + len };
+    };
+    const found = [];
+    for (let i = buf.indexOf(0x01); i !== -1 && i < buf.length - 8; i = buf.indexOf(0x01, i + 1)) {
+      if (buf[i + 1] !== 0x00) continue;
+      const a = readStr(i + 2); if (!a) continue;
+      const b = readStr(a.next); if (!b) continue;
+      const c = readStr(b.next); if (!c) continue;
+      if (buf[c.next] !== 0x00 || buf[c.next + 1] !== 0x00) continue;
+      if (!/^\d+(\.\d+){1,3}$/.test(c.s)) continue;
+      if (/\s/.test(a.s)) continue;                         // GUIDs have no spaces
+      found.push({ guid: a.s, name: b.s, version: c.s });
+    }
+    this._pluginDeclCache.set(dllPath, { key, value: found });
+    return found;
+  }
+
+  /**
+   * Catch mods updated by hand: read the plugin version declared in each mod's
+   * own DLL(s) and, when it is NEWER than the version recorded at install (from
+   * the archive name), adopt it, so the update check compares against what is
+   * really installed. A DLL version that is lower or equal never replaces the
+   * recorded one — many authors leave the plugin version behind the release
+   * number. Returns { changed, restored }: mods that took a DLL version, and mods
+   * whose earlier DLL-adopted version was put back.
+   */
+  syncVersionsFromDlls() {
+    const ident = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const changed = [];
+    const restored = [];
+    let dirty = false;
+    for (const mod of this.mods.values()) {
+      if (!mod.version) continue;
+      const key = ident(String(mod.name).replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' '));
+      // The plugin must BE this mod: its declared name, the last part of its
+      // GUID, or the DLL it lives in equals the mod's name. Loose "contains"
+      // matching let "BepInEx with Configuration Manager" adopt the bundled
+      // Configuration Manager plugin's version (18.3), so it is not used.
+      const decls = [];
+      for (const p of this._absFilesOf(mod)) {
+        if (!/\.dll$/i.test(p) || ModManager.SHARED_DLLS.has(path.basename(p).toLowerCase())) continue;
+        const dllKey = ident(path.basename(p, path.extname(p)));
+        for (const d of this._readPluginDeclarations(p)) {
+          const guidTail = ident(String(d.guid).split('.').pop());
+          if (ident(d.name) === key || guidTail === key || dllKey === key) decls.push(d);
+        }
+      }
+      const dllVersion = decls.map(d => d.version).sort((x, y) => this._compareVersions(y, x))[0] || null;
+
+      // Undo a version adopted earlier that this mod's own plugin no longer backs
+      // (the rule above was looser in an earlier build).
+      if (mod.manualUpdateFrom && dllVersion !== mod.version) {
+        console.log(`[mods] ${mod.name}: restoring recorded version ${mod.manualUpdateFrom} (was ${mod.version} from a DLL)`);
+        mod.version = mod.manualUpdateFrom;
+        delete mod.manualUpdateFrom;
+        restored.push(mod.id);
+        dirty = true;
+      }
+      if (!dllVersion) continue;
+      if (this._compareVersions(dllVersion, mod.version) > 0) {
+        console.log(`[mods] ${mod.name}: DLL declares ${dllVersion}, newer than recorded ${mod.version} — updated outside the manager`);
+        changed.push({ id: mod.id, name: mod.name, from: mod.version, to: dllVersion });
+        mod.manualUpdateFrom = mod.version;
+        mod.version = dllVersion;
+        dirty = true;
+      }
+    }
+    if (dirty) this._saveDb();
+    return { changed, restored };
+  }
+
 
   // ═══ SCAN FOR UNTRACKED MODS ═══
 
@@ -5537,6 +5690,7 @@ class ModManager {
       'pokemon accessories',
       'pokemon expansions',
       'pokemon figurines',
+      'pokemon games',
       'pokemon shop app',
       'pokemon statues',
       'rtcgo custom tv',

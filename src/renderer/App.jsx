@@ -57,6 +57,12 @@ function AppInner() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null; }, ms);
   }, []);
+  // Mods found updated by hand (their DLL declares a newer version than the
+  // one recorded at install).
+  const reportDllUpdates = (list) => {
+    const names = list.map(x => `${x.name} ${x.from} → ${x.to}`);
+    notify(`${t('Updated outside the manager')}: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''}`, 'info', 7000);
+  };
   const refreshMods = async () => {
     setMods(await window.api.getInstalledMods());
     setConflicts(await window.api.getConflicts());
@@ -65,6 +71,8 @@ function AppInner() {
     try {
       const r = await window.api.checkUpdates(false);
       setUpdates(r?.updates || {}); setLatestVersions(r?.latest || {}); setAppUpdate(r?.app || null);
+      if (r?.dllUpdated?.length) reportDllUpdates(r.dllUpdated);
+      if (r?.versionsChanged) setMods(await window.api.getInstalledMods());
     } catch { /* offline — no badges */ }
   };
   const refreshStaged = async () => { setStaged(await window.api.getStagedFiles()); };
@@ -85,6 +93,8 @@ function AppInner() {
       try {
         const r = await window.api.checkUpdates(true);
         setUpdates(r?.updates || {}); setLatestVersions(r?.latest || {}); setAppUpdate(r?.app || null);
+        if (r?.dllUpdated?.length) reportDllUpdates(r.dllUpdated);
+      if (r?.versionsChanged) setMods(await window.api.getInstalledMods());
       } catch { /* offline */ }
     })();
   }, []);
