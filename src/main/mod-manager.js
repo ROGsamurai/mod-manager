@@ -1378,6 +1378,11 @@ class ModManager {
    * Version)", which stays the same across releases.
    */
   _tagBuildVariant(name) {
+    // "TextureReplacer 1.7.1 Standard Version": since 1.7.1 there is one build
+    // for every game version, titled "Standard Version". It is plain
+    // "TextureReplacer", so it updates whichever build was installed before.
+    const std = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+standard\s+version\s*$/i.exec(String(name || ''));
+    if (std && std[1]) return std[1].trim();
     const m = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+(new\s*render(?:\s+version)?)\s*$/i.exec(String(name || ''));
     return m && m[1] ? `${m[1].trim()} (${m[2]})` : name;
   }
@@ -4621,12 +4626,11 @@ class ModManager {
     for (const mod of this.mods.values()) {
       const key = ident(untagged(mod.name));
       let variant = null, family = null;
+      // TextureReplacer is one build for every game version since 1.7.1, so
+      // only Enhanced Prefab Loader is checked.
       if (key === 'enhancedprefabloader') { family = 'Enhanced Prefab Loader'; variant = /classic/i.test(mod.name) ? 'classic' : 'newrender'; }
-      else if (key === 'texturereplacer') { family = 'TextureReplacer'; variant = /new\s*render/i.test(mod.name) ? 'newrender' : 'classic'; }
       if (!family || variant === game.variant) continue;
-      const need = family === 'TextureReplacer'
-        ? (game.variant === 'newrender' ? 'TextureReplacer (Newrender Version)' : 'TextureReplacer (standard build)')
-        : (game.variant === 'newrender' ? 'Enhanced Prefab Loader (New Render build)' : 'EnhancedPrefabLoader (1.0classic)');
+      const need = game.variant === 'newrender' ? 'Enhanced Prefab Loader (New Render build)' : 'EnhancedPrefabLoader (1.0classic)';
       out.push({ modId: mod.id, modName: mod.name, wrongBuild: { game: game.label, need } });
     }
     return out;

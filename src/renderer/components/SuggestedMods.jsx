@@ -40,7 +40,7 @@ const BUNDLES = [
       { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496, note: 'Two builds: the plain one for Steam\'s default branch and Xbox Game Pass (New Render), (1.0classic) for Steam\'s 1.0classic beta. Either needs Enhanced Prefab Loader API.' },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
-      { name: 'TextureReplacer', role: 'required', id: 69, note: 'Required for Shop Textures. Two builds: Newrender Version for Steam\'s default branch and Xbox Game Pass (New Render), the standard one for Steam\'s 1.0classic beta.' },
+      { name: 'TextureReplacer', role: 'required', id: 69, note: 'Required for Shop Textures. One build, the Standard Version, for every game version.' },
       { name: 'Collection Tracker', role: 'required', id: 867, note: 'Required for Promo Cards.' },
 
       { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },

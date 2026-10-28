@@ -46,11 +46,8 @@ export default function StagingView({ autoInstall, onAutoInstallTaken, staged, o
       const classic = /classic/i.test(filename) || /classic/i.test(name);
       return { family: 'epl', variant: classic ? 'classic' : 'newrender', version };
     }
-    // TextureReplacer: plain = Steam default, "Newrender Version" = New Render.
-    if (key === 'texturereplacer') {
-      const nr = /new\s*render/i.test(name) || /new\s*render/i.test(filename);
-      return { family: 'tr', variant: nr ? 'newrender' : 'classic', version };
-    }
+    // TextureReplacer has one build for every game version since 1.7.1, so it
+    // installs without the build popup.
     return null;
   };
   const confirmEpl = async (filename) => {

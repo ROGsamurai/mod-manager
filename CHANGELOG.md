@@ -1,3 +1,7 @@
+Version 2.0.9
+CHANGED
+- TextureReplacer has one build for every game version since 1.7.1 ("TextureReplacer 1.7.1 Standard Version"). It installs as plain TextureReplacer, without the build popup, and replaces whichever TextureReplacer build was installed before. The wrong-build check now only looks at Enhanced Prefab Loader, and the update check matches the Standard Version file
+
 Version 2.0.8
 CHANGED
 - Steam's default branch runs the New Render version since the game's 1.03 update. The Enhanced Prefab Loader and TextureReplacer install popups, the wrong-build check and Getting Started now treat it that way: the plain Enhanced Prefab Loader and the TextureReplacer Newrender Version are for Steam's default branch and Xbox Game Pass, and the 1.0classic / standard builds are for Steam's 1.0classic beta
