@@ -1391,7 +1391,7 @@ class ModManager {
       // "[Optional]" — so different downloads of the same mod collapse to one
       // base key for overwrite/dedup detection.
       // A tag naming a different GAME build is kept, though: "(1.0classic)"
-      // marks the Enhanced Prefab Loader for Steam's default branch, which is a
+      // marks the Enhanced Prefab Loader for Steam's 1.0classic beta, which is a
       // separate download from the New Render build, not a variant of it.
       .replace(/(?:\s*[([][^()[\]]*[)\]])+\s*$/, tags => (/classic|new\s*render/i.test(tags) ? tags : ''))
       // Then strip a trailing version — but ONLY a dotted number ("1.1.6", "3.3")
@@ -4588,8 +4588,9 @@ class ModManager {
 
   /**
    * Which renderer the game in the set folder runs: 'newrender' (Xbox Game Pass,
-   * or a Steam beta named like "1.0newrender"), 'classic' (Steam's default
-   * branch or a "1.0classic" beta), or null when it can't be told.
+   * Steam's default branch since game update 1.03, or a Steam beta named like
+   * "1.0newrender"), 'classic' (the Steam "1.0classic" beta), or null when it
+   * can't be told.
    */
   _gameRenderVariant() {
     let p = { platform: 'unknown', betaKey: '' };
@@ -4598,7 +4599,7 @@ class ModManager {
     if (p.platform === 'steam') {
       const beta = (p.betaKey || '').trim();
       if (/new\s*render/i.test(beta)) return { variant: 'newrender', label: `Steam ${beta}` };
-      if (!beta || beta.toLowerCase() === 'public') return { variant: 'classic', label: 'Steam default branch' };
+      if (!beta || beta.toLowerCase() === 'public') return { variant: 'newrender', label: 'Steam default branch' };
       if (/classic/i.test(beta)) return { variant: 'classic', label: `Steam ${beta}` };
     }
     return null;
@@ -4733,14 +4734,22 @@ class ModManager {
     let dirty = false;
     for (const mod of this.mods.values()) {
       if (!mod.version) continue;
+      // A disabled mod's files sit in disabled-mods, not at their install
+      // paths, so there is nothing to read; keep the version it already has.
+      // Reading nothing used to count as "the DLL no longer backs this
+      // version" and put a manual update back to the archive's version.
+      if (mod.enabled === false) continue;
       const key = ident(String(mod.name).replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' '));
       // The plugin must BE this mod: its declared name, the last part of its
       // GUID, or the DLL it lives in equals the mod's name. Loose "contains"
       // matching let "BepInEx with Configuration Manager" adopt the bundled
       // Configuration Manager plugin's version (18.3), so it is not used.
       const decls = [];
+      let readAny = false;
       for (const p of this._absFilesOf(mod)) {
         if (!/\.dll$/i.test(p) || ModManager.SHARED_DLLS.has(path.basename(p).toLowerCase())) continue;
+        if (!fs.existsSync(p)) continue;
+        readAny = true;
         const dllKey = ident(path.basename(p, path.extname(p)));
         for (const d of this._readPluginDeclarations(p)) {
           const guidTail = ident(String(d.guid).split('.').pop());
@@ -4751,7 +4760,7 @@ class ModManager {
 
       // Undo a version adopted earlier that this mod's own plugin no longer backs
       // (the rule above was looser in an earlier build).
-      if (mod.manualUpdateFrom && dllVersion !== mod.version) {
+      if (mod.manualUpdateFrom && readAny && dllVersion !== mod.version) {
         console.log(`[mods] ${mod.name}: restoring recorded version ${mod.manualUpdateFrom} (was ${mod.version} from a DLL)`);
         mod.version = mod.manualUpdateFrom;
         delete mod.manualUpdateFrom;

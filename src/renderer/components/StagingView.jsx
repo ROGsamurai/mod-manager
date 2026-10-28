@@ -28,8 +28,9 @@ export default function StagingView({ autoInstall, onAutoInstallTaken, staged, o
   const [removing, setRemoving] = useState(new Set());
 
   // Enhanced Prefab Loader and TextureReplacer each ship two builds that only
-  // work on their own game version: one for the New Render build (Xbox Game
-  // Pass) and one for Steam's default branch. Installing either asks first,
+  // work on their own game version: one for the New Render build (Steam's
+  // default branch since game update 1.03, and Xbox Game Pass) and one for
+  // Steam's "1.0classic" beta. Installing either asks first,
   // saying which game it is for and whether it matches the game folder set.
   const [eplPrompt, setEplPrompt] = useState(null); // { filename, variant, version, platform, resolve }
   const eplInfo = (filename) => {
@@ -481,23 +482,25 @@ export default function StagingView({ autoInstall, onAutoInstallTaken, staged, o
         const title = isTr ? 'TextureReplacer' : t('Enhanced Prefab Loader');
         const buildLabel = isNew ? t('New Render build') : isTr ? t('Standard build') : t('1.0 Classic build');
         const body = isTr
-          ? (isNew ? t('This build is for the New Render version of the game: Xbox Game Pass, and the New Render branch on Steam. It does not work on Steam\'s default branch, which needs the standard TextureReplacer.')
-                   : t('This is the standard build, for Steam\'s default branch. Xbox Game Pass and the New Render branch on Steam need the TextureReplacer Newrender Version.'))
-          : (isNew ? t('This build is for the New Render version of the game: Xbox Game Pass, and the New Render branch on Steam. It does not work on Steam\'s default branch, which needs EnhancedPrefabLoader (1.0classic).')
-                   : t('This build is for Steam\'s default branch. Xbox Game Pass and the New Render branch on Steam need the other build, EnhancedPrefabLoader without the 1.0classic tag.'));
+          ? (isNew ? t('This build is for the New Render version of the game: Steam\'s default branch and Xbox Game Pass. It does not work on Steam\'s 1.0classic beta, which needs the standard TextureReplacer.')
+                   : t('This is the standard build, for Steam\'s 1.0classic beta. Steam\'s default branch and Xbox Game Pass need the TextureReplacer Newrender Version.'))
+          : (isNew ? t('This build is for the New Render version of the game: Steam\'s default branch and Xbox Game Pass. It does not work on Steam\'s 1.0classic beta, which needs EnhancedPrefabLoader (1.0classic).')
+                   : t('This build is for Steam\'s 1.0classic beta. Steam\'s default branch and Xbox Game Pass need the other build, EnhancedPrefabLoader without the 1.0classic tag.'));
         const note = isTr ? t('Only one TextureReplacer build can be installed: installing this one replaces the other if it is installed.')
           : t('Both builds need Enhanced Prefab Loader API. Only one build can be installed: installing this one replaces the other if it is installed.');
         const wrong = isTr ? t('This is the wrong build for your game. Download the other TextureReplacer file from its Nexus page.')
           : t('This is the wrong build for your game. Download the other Enhanced Prefab Loader file from its Nexus page.');
-        const betaHint = isTr ? t('If this is the New Render branch, use the Newrender Version. Otherwise use the standard build.')
-          : t('If this is the New Render branch, use the New Render build. Otherwise use 1.0 Classic.');
+        const betaHint = isTr ? t('If this beta runs the classic renderer, use the standard build. Otherwise use the Newrender Version.')
+          : t('If this beta runs the classic renderer, use 1.0 Classic. Otherwise use the New Render build.');
         const plat = p.platform?.platform;
         const beta = p.platform?.betaKey || '';
         // true = this build matches the game, false = wrong build, null = can't tell
-        // Steam's default branch and its "1.0classic" beta both run the classic
-        // renderer; other betas are old game versions we can't vouch for.
-        const steamClassic = plat === 'steam' && (!beta || beta.toLowerCase() === 'public' || /classic/i.test(beta));
-        const steamNew = plat === 'steam' && /new\s*render/i.test(beta);
+        // Since game update 1.03 Steam's default branch runs the New Render
+        // renderer, like Xbox Game Pass and a "1.0newrender" beta; the
+        // "1.0classic" beta runs the classic one. Other betas we can't vouch for.
+        const steamDefault = plat === 'steam' && (!beta || beta.toLowerCase() === 'public');
+        const steamClassic = plat === 'steam' && /classic/i.test(beta);
+        const steamNew = steamDefault || (plat === 'steam' && /new\s*render/i.test(beta));
         const matches = plat === 'gamepass' || steamNew ? isNew
           : steamClassic ? !isNew
           : null;

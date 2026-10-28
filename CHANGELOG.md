@@ -1,8 +1,16 @@
+Version 2.0.8
+CHANGED
+- Steam's default branch runs the New Render version since the game's 1.03 update. The Enhanced Prefab Loader and TextureReplacer install popups, the wrong-build check and Getting Started now treat it that way: the plain Enhanced Prefab Loader and the TextureReplacer Newrender Version are for Steam's default branch and Xbox Game Pass, and the 1.0classic / standard builds are for Steam's 1.0classic beta
+- The Pokemon Mod pack in Getting Started is now titled "Pokemon Expansions, Accessories, Figurines, Statues & Games"
+
+FIXED
+- Disabling a mod that was updated by hand no longer puts its version back to the archive's version (and shows a false Update Available). A disabled mod's DLL is in disabled-mods, so its version is now left as it is until it is enabled again
+
 Version 2.0.7
 NEW
 - A wrong Enhanced Prefab Loader or TextureReplacer build for your game shows as a problem: a red line on the mod in Installed saying which build to use, and it counts on Home's Problems tile. Xbox Game Pass and Steam betas named like "1.0newrender" need the New Render builds; Steam's default branch and "1.0classic" need the classic ones. The install popup also recognises the "1.0newrender" beta now
 - Mods updated by hand are picked up. Before each update check, the manager reads the plugin version declared inside each mod's DLL ([BepInPlugin]); when it is newer than the version recorded at install, the mod takes the DLL's version, so the update check compares against what is really installed. A DLL version lower than or equal to the recorded one never replaces it. The version chip's tooltip and a notice say which mods were updated outside the manager
-- Getting Started lists Pokemon Games as the ninth main file of the Pokemon Mod, and the pack is now titled "Pokemon Expansions, Accessories, Figurines, Statues & Games". It needs Enhanced Prefab Loader and is grouped with the other Real TCG Overhaul packs
+- Getting Started lists Pokemon Games as the ninth main file of the Pokemon Mod. It needs Enhanced Prefab Loader and is grouped with the other Real TCG Overhaul packs
 
 FIXED
 - The archive a mod was installed from shows as a dimmed Re-install in Staged even after the mod was updated by hand to a newer version, instead of a highlighted Install (downgrade) row
