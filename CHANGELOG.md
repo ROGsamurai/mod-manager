@@ -1,3 +1,7 @@
+Unreleased
+FIXED
+- TextureReplacer 1.7.1 installed as "TextureReplacer 1.7.1 (Standard Version)". The Nexus download has the build tag in brackets after the version, which the name parser only recognised without brackets. It now installs as plain TextureReplacer, counts as installed in Getting Started, and an entry already installed under the long name is renamed the next time the manager starts
+
 Version 2.0.9
 CHANGED
 - TextureReplacer has one build for every game version since 1.7.1 ("TextureReplacer 1.7.1 Standard Version"). It installs as plain TextureReplacer, without the build popup, and replaces whichever TextureReplacer build was installed before. The wrong-build check now only looks at Enhanced Prefab Loader, and the update check matches the Standard Version file

@@ -295,6 +295,10 @@ class ModManager {
     const migrationVersion = store.get('migrationVersion', 0);
 
     for (const [id, mod] of this.mods) {
+      // Names that kept a build tag with an embedded version ("TextureReplacer
+      // 1.7.1 (Standard Version)") are normalised the same way new installs are.
+      const tagged = this._tagBuildVariant(mod.name);
+      if (tagged && tagged !== mod.name) { console.log(`[mods] renamed "${mod.name}" -> "${tagged}"`); mod.name = tagged; changed = true; }
       if (mod.filename && (!mod.version || mod.version === '')) {
         const parsed = this._parseNexusFilename(mod.filename);
         if (parsed.version) { mod.version = parsed.version; changed = true; }
@@ -1381,9 +1385,11 @@ class ModManager {
     // "TextureReplacer 1.7.1 Standard Version": since 1.7.1 there is one build
     // for every game version, titled "Standard Version". It is plain
     // "TextureReplacer", so it updates whichever build was installed before.
-    const std = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+standard\s+version\s*$/i.exec(String(name || ''));
+    // The tag may come bracketed ("TextureReplacer 1.7.1 (Standard Version)"),
+    // which is how the Nexus download is actually named, or bare.
+    const std = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+[([]?\s*standard\s+version\s*[)\]]?\s*$/i.exec(String(name || ''));
     if (std && std[1]) return std[1].trim();
-    const m = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+(new\s*render(?:\s+version)?)\s*$/i.exec(String(name || ''));
+    const m = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+[([]?\s*(new\s*render(?:\s+version)?)\s*[)\]]?\s*$/i.exec(String(name || ''));
     return m && m[1] ? `${m[1].trim()} (${m[2]})` : name;
   }
 
