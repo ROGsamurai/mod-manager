@@ -297,6 +297,15 @@ class ModManager {
     for (const [id, mod] of this.mods) {
       // Names that kept a build tag with an embedded version ("TextureReplacer
       // 1.7.1 (Standard Version)") are normalised the same way new installs are.
+      // The DLL version check was removed: a plugin version the author forgot
+      // to raise (or a bundled plugin's version) made it unreliable. Put back
+      // the version recorded at install for any mod that took one from its DLL.
+      if (mod.manualUpdateFrom) {
+        console.log(`[mods] ${mod.name}: restoring recorded version ${mod.manualUpdateFrom} (was ${mod.version} from its DLL)`);
+        mod.version = mod.manualUpdateFrom;
+        delete mod.manualUpdateFrom;
+        changed = true;
+      }
       const tagged = this._tagBuildVariant(mod.name);
       if (tagged && tagged !== mod.name) { console.log(`[mods] renamed "${mod.name}" -> "${tagged}"`); mod.name = tagged; changed = true; }
       if (mod.filename && (!mod.version || mod.version === '')) {
@@ -1382,13 +1391,18 @@ class ModManager {
    * Version)", which stays the same across releases.
    */
   _tagBuildVariant(name) {
-    // "TextureReplacer 1.7.1 Standard Version": since 1.7.1 there is one build
-    // for every game version, titled "Standard Version". It is plain
-    // "TextureReplacer", so it updates whichever build was installed before.
-    // The tag may come bracketed ("TextureReplacer 1.7.1 (Standard Version)"),
-    // which is how the Nexus download is actually named, or bare.
-    const std = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+[([]?\s*standard\s+version\s*[)\]]?\s*$/i.exec(String(name || ''));
-    if (std && std[1]) return std[1].trim();
+    // TextureReplacer has one build for every game version since 1.7.1, but its
+    // download title keeps changing: "TextureReplacer 1.7.1 (Standard Version)",
+    // "TextureReplacer 1.7.4 (Default Version)", bracketed or bare. Anything
+    // after the name that is not the old New Render tag is dropped, so it is
+    // always plain "TextureReplacer" and updates whichever build was installed.
+    // Only a version and a "... Version" / "... Build" tag may follow, so a
+    // different mod whose name merely starts with TextureReplacer is left alone.
+    const tr = /^\s*texture\s*replacer\b(.*)$/i.exec(String(name || ''));
+    if (tr && !/new\s*render/i.test(tr[1])) {
+      const rest = tr[1].replace(/\bv?\d+(?:\.\d+)+\b/gi, '').replace(/[()[\]]/g, ' ').trim();
+      if (!rest || /\b(version|build)$/i.test(rest)) return 'TextureReplacer';
+    }
     const m = /^(.*?)(?:\s+v?\d+(?:\.\d+)+)?\s+[([]?\s*(new\s*render(?:\s+version)?)\s*[)\]]?\s*$/i.exec(String(name || ''));
     return m && m[1] ? `${m[1].trim()} (${m[2]})` : name;
   }
@@ -4683,112 +4697,6 @@ class ModManager {
   _loadDb() { this.mods = new Map(Object.entries(store.get('installedMods', {}))); }
   _saveDb() { store.set('installedMods', Object.fromEntries(this.mods)); }
 
-  /**
-   * The [BepInPlugin(guid, name, version)] declarations inside a plugin DLL.
-   * The attribute's arguments are stored in the assembly's blob heap as a
-   * custom-attribute blob: prolog 01 00, three length-prefixed UTF-8 strings,
-   * then a 16-bit named-argument count (00 00). That shape is matched directly,
-   * with the third string required to look like a version, so no .NET metadata
-   * parser is needed. Cached by path, size and mtime.
-   */
-  _readPluginDeclarations(dllPath) {
-    let st;
-    try { st = fs.statSync(dllPath); } catch { return []; }
-    this._pluginDeclCache = this._pluginDeclCache || new Map();
-    const key = `${dllPath}|${st.size}|${st.mtimeMs}`;
-    const hit = this._pluginDeclCache.get(dllPath);
-    if (hit && hit.key === key) return hit.value;
-    let buf;
-    try { buf = fs.readFileSync(dllPath); } catch { return []; }
-    const readStr = (pos) => {
-      if (pos >= buf.length) return null;
-      let len = buf[pos], hdr = 1;
-      if (len === 0xff) return null;                       // null string
-      if ((len & 0x80) !== 0) {                            // 2-byte compressed length
-        if ((len & 0xc0) !== 0x80 || pos + 1 >= buf.length) return null;
-        len = ((len & 0x3f) << 8) | buf[pos + 1]; hdr = 2;
-      }
-      if (len === 0 || len > 200 || pos + hdr + len > buf.length) return null;
-      const s = buf.toString('utf8', pos + hdr, pos + hdr + len);
-      if (/[\x00-\x1f\ufffd]/.test(s)) return null;
-      return { s, next: pos + hdr + len };
-    };
-    const found = [];
-    for (let i = buf.indexOf(0x01); i !== -1 && i < buf.length - 8; i = buf.indexOf(0x01, i + 1)) {
-      if (buf[i + 1] !== 0x00) continue;
-      const a = readStr(i + 2); if (!a) continue;
-      const b = readStr(a.next); if (!b) continue;
-      const c = readStr(b.next); if (!c) continue;
-      if (buf[c.next] !== 0x00 || buf[c.next + 1] !== 0x00) continue;
-      if (!/^\d+(\.\d+){1,3}$/.test(c.s)) continue;
-      if (/\s/.test(a.s)) continue;                         // GUIDs have no spaces
-      found.push({ guid: a.s, name: b.s, version: c.s });
-    }
-    this._pluginDeclCache.set(dllPath, { key, value: found });
-    return found;
-  }
-
-  /**
-   * Catch mods updated by hand: read the plugin version declared in each mod's
-   * own DLL(s) and, when it is NEWER than the version recorded at install (from
-   * the archive name), adopt it, so the update check compares against what is
-   * really installed. A DLL version that is lower or equal never replaces the
-   * recorded one — many authors leave the plugin version behind the release
-   * number. Returns { changed, restored }: mods that took a DLL version, and mods
-   * whose earlier DLL-adopted version was put back.
-   */
-  syncVersionsFromDlls() {
-    const ident = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const changed = [];
-    const restored = [];
-    let dirty = false;
-    for (const mod of this.mods.values()) {
-      if (!mod.version) continue;
-      // A disabled mod's files sit in disabled-mods, not at their install
-      // paths, so there is nothing to read; keep the version it already has.
-      // Reading nothing used to count as "the DLL no longer backs this
-      // version" and put a manual update back to the archive's version.
-      if (mod.enabled === false) continue;
-      const key = ident(String(mod.name).replace(/\s*[([][^()[\]]*[)\]]\s*/g, ' '));
-      // The plugin must BE this mod: its declared name, the last part of its
-      // GUID, or the DLL it lives in equals the mod's name. Loose "contains"
-      // matching let "BepInEx with Configuration Manager" adopt the bundled
-      // Configuration Manager plugin's version (18.3), so it is not used.
-      const decls = [];
-      let readAny = false;
-      for (const p of this._absFilesOf(mod)) {
-        if (!/\.dll$/i.test(p) || ModManager.SHARED_DLLS.has(path.basename(p).toLowerCase())) continue;
-        if (!fs.existsSync(p)) continue;
-        readAny = true;
-        const dllKey = ident(path.basename(p, path.extname(p)));
-        for (const d of this._readPluginDeclarations(p)) {
-          const guidTail = ident(String(d.guid).split('.').pop());
-          if (ident(d.name) === key || guidTail === key || dllKey === key) decls.push(d);
-        }
-      }
-      const dllVersion = decls.map(d => d.version).sort((x, y) => this._compareVersions(y, x))[0] || null;
-
-      // Undo a version adopted earlier that this mod's own plugin no longer backs
-      // (the rule above was looser in an earlier build).
-      if (mod.manualUpdateFrom && readAny && dllVersion !== mod.version) {
-        console.log(`[mods] ${mod.name}: restoring recorded version ${mod.manualUpdateFrom} (was ${mod.version} from a DLL)`);
-        mod.version = mod.manualUpdateFrom;
-        delete mod.manualUpdateFrom;
-        restored.push(mod.id);
-        dirty = true;
-      }
-      if (!dllVersion) continue;
-      if (this._compareVersions(dllVersion, mod.version) > 0) {
-        console.log(`[mods] ${mod.name}: DLL declares ${dllVersion}, newer than recorded ${mod.version} — updated outside the manager`);
-        changed.push({ id: mod.id, name: mod.name, from: mod.version, to: dllVersion });
-        mod.manualUpdateFrom = mod.version;
-        mod.version = dllVersion;
-        dirty = true;
-      }
-    }
-    if (dirty) this._saveDb();
-    return { changed, restored };
-  }
 
 
   // ═══ SCAN FOR UNTRACKED MODS ═══

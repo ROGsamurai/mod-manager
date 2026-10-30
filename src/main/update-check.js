@@ -191,9 +191,9 @@ class UpdateCheck {
       // ("TextureReplacer (Newrender Version)"). Compare with every version
       // number removed so each build matches its own file.
       const noVer = n => ident(String(n).replace(/\bv?\d+(?:\.\d+)+\b/gi, ''));
-      // "TextureReplacer 1.7.1 Standard Version" is installed as plain
-      // "TextureReplacer": a trailing "Standard Version" names the main build.
-      const noStd = n => noVer(n).replace(/standardversion$/, '');
+      // TextureReplacer is installed as plain "TextureReplacer" whatever its
+      // download is titled ("... (Standard Version)", "... (Default Version)").
+      const noStd = n => { const k = noVer(n); return /^texturereplacer/.test(k) && !/newrender/.test(k) ? 'texturereplacer' : k; };
       const matches = files.filter(f => ident(f.name) === ident(mod.name))
         .concat(files.filter(f => bare(f.name) === bare(mod.name)))
         .concat(files.filter(f => noVer(f.name) === noVer(mod.name)))

@@ -1,6 +1,13 @@
 Unreleased
 FIXED
+- TextureReplacer 1.7.4 installed as "TextureReplacer 1.7.4 (Default Version)". Its download title keeps changing ("Standard Version", now "Default Version"), so any TextureReplacer title made of the name, a version and a "... Version" or "... Build" tag now installs as plain TextureReplacer, except the old Newrender build. Entries already installed under the long name are renamed the next time the manager starts, and the update check matches the file whatever it is called
+
+Version 2.1.0
+FIXED
 - TextureReplacer 1.7.1 installed as "TextureReplacer 1.7.1 (Standard Version)". The Nexus download has the build tag in brackets after the version, which the name parser only recognised without brackets. It now installs as plain TextureReplacer, counts as installed in Getting Started, and an entry already installed under the long name is renamed the next time the manager starts
+
+REMOVED
+- The DLL version check for mods updated by hand. It read the plugin version inside each mod's DLL, which is wrong whenever an author forgets to raise it or a pack bundles someone else's plugin. Mods that took a version from their DLL go back to the version recorded at install the next time the manager starts
 
 Version 2.0.9
 CHANGED

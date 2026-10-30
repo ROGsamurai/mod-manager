@@ -371,14 +371,7 @@ ipcMain.handle('mods:list', () => modManager.getInstalledMods());
 // only. Nothing is stored or republished; see src/main/update-check.js.
 ipcMain.handle('updates:check', async (_e, force) => {
   try {
-    // First pick up mods updated by hand (a newer plugin version in the DLL than
-    // the one recorded at install), then ask Nexus with the real versions. A
-    // version change makes any cached answer stale, so it forces a fresh check.
-    let dllUpdated = [], dllRestored = [];
-    try { ({ changed: dllUpdated, restored: dllRestored } = modManager.syncVersionsFromDlls()); } catch (e) { console.warn('[updates:check] dll versions:', e.message); }
-    const versionsChanged = dllUpdated.length > 0 || dllRestored.length > 0;
-    const r = await updateCheck.check(modManager.getInstalledMods(), app.getVersion(), !!force || versionsChanged);
-    return { ...r, dllUpdated, versionsChanged };
+    return await updateCheck.check(modManager.getInstalledMods(), app.getVersion(), !!force);
   }
   catch (e) { console.error('[updates:check]', e); return { updates: {}, latest: {}, app: null, error: e.message }; }
 });

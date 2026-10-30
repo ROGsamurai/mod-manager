@@ -435,7 +435,7 @@ function Row({ mod, i, conflict, conflictInfo, missingDeps, wrongBuild, update, 
       </div>
       <div style={{ width: 90 }}>
         {mod.version
-          ? <span className="badge badge-accent" title={mod.manualUpdateFrom ? `${t('Updated outside the manager')}: ${mod.manualUpdateFrom} → ${mod.version}` : undefined}>{mod.version}</span>
+          ? <span className="badge badge-accent">{mod.version}</span>
           : <span className="mono" style={{ color: 'var(--text-4)', fontSize: 12.5 }}>—</span>}
       </div>
       <div style={{ width: 134, marginLeft: 28 }}>
