@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useI18n } from '../i18n';
 import logoImg from '../assets/logo.png';
+import thumbPokemon from '../assets/thumb-pokemon.jpg';
+import thumbPocket from '../assets/thumb-pokemon-pocket.jpg';
+import thumbYugioh from '../assets/thumb-yugioh.jpg';
+
+// Each pack's own thumbnail; a pack without one falls back to the logo.
+const THUMBS = { 'pokemon': thumbPokemon, 'pokemon-pocket': thumbPocket, 'yugioh': thumbYugioh };
 
 /**
  * Bundles: everything a themed mod pack needs, in the order it should be set up.
@@ -37,7 +43,6 @@ const BUNDLES = [
 
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
       { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
-      { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496, note: 'Two builds: the plain one for Steam\'s default branch and Xbox Game Pass (New Render), (1.0classic) for Steam\'s 1.0classic beta. Either needs Enhanced Prefab Loader API.' },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
       { name: 'TextureReplacer', role: 'required', id: 69, note: 'Required for Shop Textures. One build for every game version.' },
@@ -71,7 +76,6 @@ const BUNDLES = [
       // TextureReplacer, and Collection Tracker is required outright.
       { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
       { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
-      { name: 'Purchase Overhaul', role: 'required', id: 1609, note: 'Required for the Shop App.' },
       { name: 'Enhanced Prefab Loader', role: 'required', id: 496, note: 'Two builds: the plain one for Steam\'s default branch and Xbox Game Pass (New Render), (1.0classic) for Steam\'s 1.0classic beta. Either needs Enhanced Prefab Loader API.' },
       { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
       { name: 'Collection Tracker', role: 'required', id: 867 },
@@ -81,6 +85,34 @@ const BUNDLES = [
       { name: 'EPL Demand', role: 'recommended', id: 1084 },
       { name: 'CardGrade Overhaul', role: 'recommended', id: 1728 },
       { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },
+      { name: 'RTCGO Custom TV', role: 'recommended', id: 895 },
+    ],
+  },
+  {
+    id: 'yugioh',
+    name: 'Yu-Gi-Oh Mod',
+    blurb: 'Yu-Gi-Oh Expansions, Accessories, Figurines and Statues, plus everything they depend on.',
+    mods: [
+      { name: 'Yu-Gi-Oh Expansions, Accessories, Figurines & Statues', role: 'pack', id: 987,
+        note: 'Download all 5 main files from the Files tab (about 200 MB).',
+        files: [
+          'Yu-Gi-Oh Expansions - Year 2002',
+          'Yu-Gi-Oh Accessories',
+          'Yu-Gi-Oh Figurines',
+          'Yu-Gi-Oh Statues',
+          'Yu-Gi-Oh Shop App',
+        ] },
+
+      { name: 'BepInEx with Configuration Manager', role: 'required', id: 1555 },
+      { name: 'QOL ShopOS', role: 'required', id: 1754, note: 'Required for the Shop App.' },
+      { name: 'Enhanced Prefab Loader', role: 'required', id: 496, note: 'Two builds: the plain one for Steam\'s default branch and Xbox Game Pass (New Render), (1.0classic) for Steam\'s 1.0classic beta. Either needs Enhanced Prefab Loader API.' },
+      { name: 'Enhanced Prefab Loader API', role: 'required', id: 1144 },
+      { name: 'Collection Tracker', role: 'required', id: 867 },
+
+      { name: 'RTCGO Holographics', role: 'recommended', id: 1676, note: 'Holographic card foils.' },
+      { name: 'Enhanced Binder', role: 'recommended', id: 1116 },
+      { name: 'EPL Demand', role: 'recommended', id: 1084 },
+      { name: 'CardGrade Overhaul', role: 'recommended', id: 1728 },
       { name: 'RTCGO Custom TV', role: 'recommended', id: 895 },
     ],
   },
@@ -134,10 +166,17 @@ export default function SuggestedMods({ mods = [] }) {
     const pct = total ? Math.round(have / total * 100) : 0;
     return (
       <article key={b.id} className={`card${expanded ? ' card-accent' : ''}`} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <div aria-hidden="true" style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'radial-gradient(120% 120% at 50% 0%, var(--accent-soft) 0%, var(--bg-elevated) 70%)', borderBottom: '1px solid var(--border)' }}>
-          <img src={logoImg} alt="" style={{ height: 112, width: 112, objectFit: 'contain' }} />
-        </div>
+        {THUMBS[b.id] ? (
+          // The whole 16:9 thumbnail, uncropped, so its text stays readable.
+          <div aria-hidden="true" style={{ aspectRatio: '16 / 9', background: 'var(--bg-deep)', borderBottom: '1px solid var(--border)' }}>
+            <img src={THUMBS[b.id]} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </div>
+        ) : (
+          <div aria-hidden="true" style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'radial-gradient(120% 120% at 50% 0%, var(--accent-soft) 0%, var(--bg-elevated) 70%)', borderBottom: '1px solid var(--border)' }}>
+            <img src={logoImg} alt="" style={{ height: 112, width: 112, objectFit: 'contain' }} />
+          </div>
+        )}
         <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
           <div><span className={status.cls}>{status.text}</span></div>
           <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>{b.name}</h2>

@@ -2486,6 +2486,10 @@ class ModManager {
       'bepinex/plugins/shopos/tools/qjs.exe',
       'bepinex/plugins/readingcorner/tools/7z.exe',
       'bepinex/plugins/readingcorner/tools/readingcornerpicker.ps1',
+      // Easy Billboard Studio (installs as ShopSignMover): its GIF decoder and
+      // the file-picker script, at the exact paths the mod ships them.
+      'bepinex/plugins/shopsignmover/tools/billboardgifdecoder.exe',
+      'bepinex/plugins/shopsignmover/tools/billboardmediapicker.ps1',
     ];
     const isSafeExePath = lp => SAFE_EXE_PATHS.some(s => lp === s || lp.endsWith('/' + s));
 
@@ -4496,6 +4500,10 @@ class ModManager {
       'pokemon gameboy games': ['enhancedprefabloader'],
       'pokemon n64 games': ['enhancedprefabloader'],
       'pokemon games': ['enhancedprefabloader'],
+      'yu-gi-oh expansions - year 2002': ['enhancedprefabloader'],
+      'yu-gi-oh accessories': ['enhancedprefabloader'],
+      'yu-gi-oh figurines': ['enhancedprefabloader'],
+      'yu-gi-oh statues': ['enhancedprefabloader'],
       'pokemon statues': ['enhancedprefabloader'],
       'pokemon shop textures': ['texturereplacer'],
       'rtcgo shop textures': ['texturereplacer'],
@@ -4578,11 +4586,10 @@ class ModManager {
     }
 
     // Shop apps (Pokemon Shop App, Pokemon Pocket Shop App, the Pokemon and
-    // Yu-Gi-Oh Shop Phone Apps) run on QOL ShopOS and Purchase Overhaul, and
-    // need both. Matched by name so every shop app is covered.
+    // Yu-Gi-Oh Shop Phone Apps) run on QOL ShopOS. Purchase Overhaul is no
+    // longer required. Matched by name so every shop app is covered.
     const SHOP_APP_DEPS = [
       { key: 'shopos', label: 'QOL ShopOS' },
-      { key: 'purchaseoverhaul', label: 'Purchase Overhaul' },
     ];
     const isShopApp = m => /shop(phone)?app/.test(ident(m.name));
     for (const mod of this.mods.values()) {
@@ -5622,6 +5629,11 @@ class ModManager {
       'pokemon statues',
       'rtcgo custom tv',
       'yu gi oh shop phone app',
+      'yu-gi-oh expansions - year 2002',
+      'yu-gi-oh accessories',
+      'yu-gi-oh figurines',
+      'yu-gi-oh statues',
+      'yu-gi-oh shop app',
       'yu-gi-oh manga',
       'yu-gi-oh starter decks',
       'yu-gi-oh structure decks',

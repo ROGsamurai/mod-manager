@@ -1,4 +1,15 @@
 Unreleased
+NEW
+- Getting Started has a Yu-Gi-Oh Mod card with its own thumbnail. It counts the pack's 5 main files one by one (Yu-Gi-Oh Expansions - Year 2002, Accessories, Figurines, Statues and Shop App) and lists BepInEx, QOL ShopOS, Enhanced Prefab Loader and its API, and Collection Tracker as required. The Yu-Gi-Oh files group with the other Real TCG Overhaul packs, and the four content packs show as needing Enhanced Prefab Loader
+
+CHANGED
+- Purchase Overhaul is no longer required. It is off the Getting Started lists for the Pokemon and Pokemon Pocket mods, and shop apps no longer show "Missing: Purchase Overhaul"; they still need QOL ShopOS
+
+Version 2.1.1
+NEW
+- Getting Started shows each pack's own thumbnail on its card: RTCGO Pokemon Shop for the Pokemon Mod and RTCGO Pokemon Pocket Shop for the Pokemon Pocket Mod
+- Easy Billboard Studio installs. Its bundled BillboardGifDecoder.exe and BillboardMediaPicker.ps1 were blocked as executables; both are now allowed, but only at the exact paths the mod ships them (BepInEx/plugins/ShopSignMover/Tools/), so the same files anywhere else are still blocked
+
 FIXED
 - TextureReplacer 1.7.4 installed as "TextureReplacer 1.7.4 (Default Version)". Its download title keeps changing ("Standard Version", now "Default Version"), so any TextureReplacer title made of the name, a version and a "... Version" or "... Build" tag now installs as plain TextureReplacer, except the old Newrender build. Entries already installed under the long name are renamed the next time the manager starts, and the update check matches the file whatever it is called
 
