@@ -5,8 +5,9 @@
  * folders whose names end in "_prefabloader" (for example
  * BepInEx/plugins/Real TCG Overhaul/Base Expansions/Base_prefabloader/
  * basesetexpansion.json). This module finds those files, reads them, saves
- * edits, and keeps the original of every file the first time it is edited so
- * a single click can put it back.
+ * edits, and keeps a baseline copy of every file so an edit is noticed
+ * whether it was made here or by overwriting the file in the game folder, and
+ * a single click can put the original back.
  *
  * Backups live in the manager's own data folder, not next to the file, so the
  * game and EPL never see them, and uninstalling or updating a mod cannot leave
@@ -62,20 +63,59 @@ class EplJson {
   }
 
   /**
-   * Backup state for one file:
-   *  'none'     never edited here
-   *  'edited'   edited here and unchanged since (Restore puts the original back)
-   *  'replaced' the file changed after our last save — a mod update replaced
-   *             it — so the stored original is out of date and is dropped
+   * Every .json the editor sees gets a baseline: a copy of the file as it was
+   * the first time the manager saw it (or after a mod install or update), kept
+   * with its hash. That is what makes edits visible no matter who made them:
+   * a file saved here, or one overwritten in the game folder by hand (a copy
+   * from a friend, a Discord download), no longer matches its baseline.
+   *
+   * State of one file:
+   *  'none'     matches its baseline
+   *  'edited'   saved in this editor and unchanged since
+   *  'outside'  changed in the game folder without the manager; counts as
+   *             edited (Edited tag, price reset, Restore)
+   *
+   * When a file no longer matches and its mod was installed or updated by the
+   * manager after the baseline was taken, the new file is the mod's new
+   * original: the baseline moves to it.
    */
+  setOwnerLookup(fn) { this._ownerInstalledAt = typeof fn === 'function' ? fn : null; }
+
+  _writeMeta(rel, meta) {
+    const bp = this._backupPaths(rel);
+    fs.mkdirSync(bp.dir, { recursive: true });
+    fs.writeFileSync(bp.meta, JSON.stringify(meta, null, 2));
+  }
+
+  _baseline(rel, buf, extra = {}) {
+    const bp = this._backupPaths(rel);
+    fs.mkdirSync(bp.dir, { recursive: true });
+    fs.writeFileSync(bp.file, buf);
+    const meta = { rel, originalHash: sha1(buf), recordedAt: new Date().toISOString(), ...extra };
+    this._writeMeta(rel, meta);
+    return meta;
+  }
+
   _backupState(abs, rel) {
-    const meta = this._readMeta(rel);
-    if (!meta) return 'none';
+    let cur;
+    try { cur = fs.readFileSync(abs); } catch { return 'none'; }
+    const h = sha1(cur);
+    let meta = this._readMeta(rel);
+    const bp = this._backupPaths(rel);
     try {
-      const cur = sha1(fs.readFileSync(abs));
-      if (cur === meta.savedHash) return 'edited';
-      if (cur === meta.originalHash) return 'none';   // restored by hand, or never really changed
-      return 'replaced';
+      if (!meta || !fs.existsSync(bp.file)) { this._baseline(rel, cur); return 'none'; }
+      if (h === meta.originalHash) {
+        if (meta.savedHash || meta.outsideHash) { delete meta.savedHash; delete meta.savedAt; delete meta.outsideHash; this._writeMeta(rel, meta); }
+        return 'none';
+      }
+      if (meta.savedHash && h === meta.savedHash) return 'edited';
+      // Changed, and not by this editor. A mod install/update by the manager
+      // after the baseline (or after our last save) makes it the new original.
+      const since = Date.parse(meta.savedAt || meta.recordedAt || meta.backedUpAt || '') || 0;
+      const installedAt = this._ownerInstalledAt ? (this._ownerInstalledAt(abs) || 0) : 0;
+      if (installedAt && installedAt > since) { this._baseline(rel, cur); return 'none'; }
+      if (meta.outsideHash !== h) { meta.outsideHash = h; meta.outsideSeenAt = new Date().toISOString(); this._writeMeta(rel, meta); }
+      return 'outside';
     } catch { return 'none'; }
   }
 
@@ -201,15 +241,11 @@ class EplJson {
     try {
       const { abs, rel } = this._check(gamePath, file);
       if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Nothing valid to save.');
-      const current = fs.readFileSync(abs);
+      // Settles the baseline first: a file seen for the first time becomes its
+      // own original, and a file changed outside keeps the original from before.
       const state = this._backupState(abs, rel);
-      const bp = this._backupPaths(rel);
-      let meta = this._readMeta(rel);
-      if (state !== 'edited') {
-        fs.mkdirSync(bp.dir, { recursive: true });
-        fs.writeFileSync(bp.file, current);
-        meta = { rel, originalHash: sha1(current), backedUpAt: new Date().toISOString() };
-      }
+      const meta = this._readMeta(rel) || this._baseline(rel, fs.readFileSync(abs));
+      const firstEdit = state === 'none';
       // Four-space indent, like EPL's own files. Values keep their JSON types,
       // so numbers stay numbers and true/false stay booleans.
       const out = Buffer.from(JSON.stringify(data, null, 4) + '\n', 'utf8');
@@ -218,8 +254,9 @@ class EplJson {
       fs.renameSync(tmp, abs);
       meta.savedHash = sha1(out);
       meta.savedAt = new Date().toISOString();
-      fs.writeFileSync(bp.meta, JSON.stringify(meta, null, 2));
-      return { success: true, info: this._describe(gamePath, abs), backupCreated: state !== 'edited' };
+      delete meta.outsideHash;
+      this._writeMeta(rel, meta);
+      return { success: true, info: this._describe(gamePath, abs), backupCreated: firstEdit };
     } catch (e) {
       try { fs.rmSync(`${path.resolve(file || '')}.mm-tmp`, { force: true }); } catch {}
       return { success: false, error: e.message };
@@ -230,15 +267,13 @@ class EplJson {
     try {
       const { abs, rel } = this._check(gamePath, file);
       const bp = this._backupPaths(rel);
-      if (!fs.existsSync(bp.file)) throw new Error('There is no original saved for this file.');
-      if (this._backupState(abs, rel) === 'replaced') {
-        this._dropBackup(rel);
-        throw new Error('This file was replaced by a mod update after it was edited, so it already is a fresh original.');
-      }
+      if (!fs.existsSync(bp.file) || this._backupState(abs, rel) === 'none') throw new Error('There is no original saved for this file.');
       const tmp = `${abs}.mm-tmp`;
       fs.copyFileSync(bp.file, tmp);
       fs.renameSync(tmp, abs);
-      this._dropBackup(rel);
+      // The baseline stays: the file now matches it again.
+      const meta = this._readMeta(rel);
+      if (meta) { delete meta.savedHash; delete meta.savedAt; delete meta.outsideHash; this._writeMeta(rel, meta); }
       return { success: true, info: this._describe(gamePath, abs) };
     } catch (e) { return { success: false, error: e.message }; }
   }

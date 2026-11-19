@@ -489,8 +489,35 @@ ipcMain.handle('config:save', (_, filename, section, key, value) => {
 });
 
 // EPL .json Editor. Backups of edited files go in the manager's data folder.
-const eplReady = () => { eplJson.init(app.getPath('userData')); return modManager.gamePath; };
-ipcMain.handle('epl:scan', () => { try { return eplJson.scan(eplReady()); } catch (e) { return { success: false, error: e.message, files: [] }; } });
+// The editor needs to know when the manager last installed or updated the mod
+// that owns a file, to tell a mod update (new original) from a hand edit.
+const eplOwnerLookup = () => {
+  const byPath = new Map();
+  try {
+    for (const m of modManager.mods.values()) {
+      const at = Date.parse(m.installedAt || '') || 0;
+      if (!at) continue;
+      for (const abs of modManager._absFilesOf(m)) {
+        const k = path.resolve(abs).toLowerCase();
+        if ((byPath.get(k) || 0) < at) byPath.set(k, at);
+      }
+    }
+  } catch (e) { console.warn('[epl] owner lookup:', e.message); }
+  return abs => byPath.get(path.resolve(abs).toLowerCase()) || 0;
+};
+const eplReady = () => { eplJson.init(app.getPath('userData')); eplJson.setOwnerLookup(eplOwnerLookup()); return modManager.gamePath; };
+ipcMain.handle('epl:scan', () => {
+  try {
+    const gp = eplReady();
+    const r = eplJson.scan(gp);
+    // A file overwritten in the game folder by hand never goes through Save,
+    // so install the bridge here too once any file counts as edited.
+    if (r?.success && r.files.some(f => f.backup === 'edited' || f.backup === 'outside')) {
+      try { r.bridge = eplBridge.ensureInstalled(gp); } catch (e) { r.bridge = { installed: false, error: e.message }; }
+    }
+    return r;
+  } catch (e) { return { success: false, error: e.message, files: [] }; }
+});
 ipcMain.handle('epl:read', (_, file) => eplJson.read(eplReady(), file));
 ipcMain.handle('epl:save', (_, file, data) => {
   const gp = eplReady();

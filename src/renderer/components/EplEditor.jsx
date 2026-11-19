@@ -581,6 +581,8 @@ function CardsTable({ expansion, cards, rarities, borders, path, onSet, t, notif
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+const isEdited = f => f?.backup === 'edited' || f?.backup === 'outside';
+
 export default function EplEditor({ notify, gameFound = true }) {
   const { t } = useI18n();
   const [files, setFiles] = useState([]);
@@ -602,12 +604,16 @@ export default function EplEditor({ notify, gameFound = true }) {
 
   const editedBundles = useMemo(() => {
     const m = new Map();
-    for (const f of files) if (f.backup === 'edited' && f.bundleId && !m.has(f.bundleId)) m.set(f.bundleId, f);
+    for (const f of files) if (isEdited(f) && f.bundleId && !m.has(f.bundleId)) m.set(f.bundleId, f);
     return [...m.values()];
   }, [files]);
   const openReset = async () => {
+    const r = await window.api.eplScan();
+    const list = r?.success === false ? files : (r?.files || files);
+    if (r?.success !== false) setFiles(list);
+    const ids = [...new Set(list.filter(f => isEdited(f) && f.bundleId).map(f => f.bundleId))];
     const st = await window.api.eplBridgeStatus();
-    setReset({ status: st || {}, picked: new Set(editedBundles.map(f => f.bundleId)), busy: false, results: null, error: null });
+    setReset({ status: st || {}, picked: new Set(ids), busy: false, results: null, error: null });
   };
   const runReset = async () => {
     setReset(r => ({ ...r, busy: true, error: null, results: null }));
@@ -619,15 +625,38 @@ export default function EplEditor({ notify, gameFound = true }) {
     }
   };
 
-  const scan = async () => {
-    setScanning(true);
+  // Latest values for the focus listener, which is registered once.
+  const live = useRef({});
+  live.current = { sel, dirty };
+  const scan = async (quiet = false) => {
+    if (!quiet) setScanning(true);
     try {
       const r = await window.api.eplScan();
-      if (r?.success === false && r.error) notify(t(r.error), 'error');
-      setFiles(r?.files || []);
-    } finally { setScanning(false); setScanned(true); }
+      if (r?.success === false && r.error) { if (!quiet) notify(t(r.error), 'error'); return; }
+      const list = (r?.files || []).map(f => ({ ...f }));
+      setFiles(list);
+      if (r?.bridge?.changed) notify(t('RTCGO Manager Bridge was added to the game so Reset prices in game works. Restart the game to load it.'), 'success', 8000);
+      // The open file was overwritten on disk: show the new contents, unless
+      // there are unsaved changes here (those are never thrown away).
+      const { sel: cur, dirty: isDirty } = live.current;
+      const fresh = cur && list.find(x => x.path === cur.path);
+      if (fresh && !isDirty && (fresh.modifiedAt !== cur.modifiedAt || fresh.backup !== cur.backup)) {
+        const rr = await window.api.eplRead(cur.path);
+        if (rr?.success && live.current.sel?.path === cur.path && !live.current.dirty) {
+          setSel(rr.info || fresh); setOrig(rr.data); setData(rr.data); setInvalid({}); setConfirmRestore(false);
+        }
+      } else if (fresh) setSel(s => (s && s.path === fresh.path ? { ...s, backup: fresh.backup, modifiedAt: fresh.modifiedAt } : s));
+    } finally { if (!quiet) setScanning(false); setScanned(true); }
   };
   useEffect(() => { if (gameFound) scan(); }, [gameFound]);
+  // Files copied into the game folder while the manager is open are picked up
+  // when the window gets focus again.
+  useEffect(() => {
+    if (!gameFound) return undefined;
+    const onFocus = () => { scan(true); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [gameFound]);
 
   const confirmLeave = () => !dirty || window.confirm(t('You have unsaved changes. Discard them?'));
   const open = async (f) => {
@@ -810,7 +839,7 @@ export default function EplEditor({ notify, gameFound = true }) {
                         borderLeft: `3px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--bg-elevated)' : 'transparent', color: 'inherit' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <span className="truncate mono" style={{ fontSize: 12.5, color: active ? 'var(--accent)' : 'var(--text-2)' }}>{f.fileName}</span>
-                        {f.backup === 'edited' && <span className="pill pill-accent" style={{ fontSize: 10, padding: '0 6px', flexShrink: 0 }}>{t('Edited')}</span>}
+                        {isEdited(f) && <span className="pill pill-accent" style={{ fontSize: 10, padding: '0 6px', flexShrink: 0 }} title={f.backup === 'outside' ? t('Changed in the game folder, not in the manager') : undefined}>{t('Edited')}</span>}
                       </span>
                       <span className="truncate" style={{ fontSize: 11.5, color: f.error ? 'var(--red-bright)' : 'var(--text-4)' }}>{f.error ? t('Cannot be read') : countText(f)}</span>
                     </button>
@@ -834,9 +863,10 @@ export default function EplEditor({ notify, gameFound = true }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 18, fontWeight: 700 }} className="truncate">{data.Name || sel.fileName}</div>
                     <div className="mono truncate" style={{ fontSize: 11.5, color: 'var(--text-4)', marginTop: 2 }} title={sel.rel}>{sel.rel}</div>
+                    {sel.backup === 'outside' && <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 4 }}>{t('This file was changed in the game folder, not in the manager. Restore original puts back the version the manager had before.')}</div>}
                   </div>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.api.eplShow(sel.path)}>{t('Show in folder')}</button>
-                  {sel.backup === 'edited' && !confirmRestore && (
+                  {isEdited(sel) && !confirmRestore && (
                     <button type="button" className="btn btn-outline-accent btn-sm" onClick={() => setConfirmRestore(true)} disabled={!!busy}>{t('Restore original')}</button>
                   )}
                   {confirmRestore && (
@@ -891,7 +921,7 @@ export default function EplEditor({ notify, gameFound = true }) {
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
                   <span style={{ flex: 1, fontSize: 13, color: badCount ? 'var(--red-bright)' : 'var(--text-2)' }}>
                     {badCount ? t('Some numbers are not valid. Fix the fields marked in red to save.')
-                      : sel.backup === 'edited' ? t('Unsaved changes.') : t('Unsaved changes. Saving keeps the original so you can restore it.')}
+                      : isEdited(sel) ? t('Unsaved changes.') : t('Unsaved changes. Saving keeps the original so you can restore it.')}
                   </span>
                   <button type="button" className="btn btn-quiet" onClick={discard} disabled={!!busy}>{t('Discard')}</button>
                   <button type="button" className="btn btn-accent" onClick={save} disabled={!!busy || badCount > 0}>
