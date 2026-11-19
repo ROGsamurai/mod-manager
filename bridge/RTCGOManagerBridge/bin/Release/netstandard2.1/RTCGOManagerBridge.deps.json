@@ -7,7 +7,7 @@
   "targets": {
     ".NETStandard,Version=v2.1": {},
     ".NETStandard,Version=v2.1/": {
-      "RTCGOManagerBridge/1.0.0": {
+      "RTCGOManagerBridge/1.0.2": {
         "runtime": {
           "RTCGOManagerBridge.dll": {}
         }
@@ -15,7 +15,7 @@
     }
   },
   "libraries": {
-    "RTCGOManagerBridge/1.0.0": {
+    "RTCGOManagerBridge/1.0.2": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

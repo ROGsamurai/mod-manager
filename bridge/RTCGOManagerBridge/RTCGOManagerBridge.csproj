@@ -9,7 +9,7 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>RTCGOManagerBridge</AssemblyName>
     <RootNamespace>RTCGOManagerBridge</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.0.2</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

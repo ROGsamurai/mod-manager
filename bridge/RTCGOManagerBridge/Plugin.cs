@@ -19,9 +19,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using BepInEx;
 using BepInEx.Logging;
 using EnhancedPrefabLoader.API;
+using EnhancedPrefabLoader.API.Models;
 using UnityEngine;
 
 namespace RTCGOManagerBridge
@@ -32,7 +34,7 @@ namespace RTCGOManagerBridge
     {
         public const string Guid = "com.rtcgo.managerbridge";
         public const string Name = "RTCGO Manager Bridge";
-        public const string Version = "1.0.0";
+        public const string Version = "1.0.2";
 
         private const float PollSeconds = 1f;
         private const float HeartbeatSeconds = 5f;
@@ -101,27 +103,27 @@ namespace RTCGOManagerBridge
             }
             result.ready = true;
 
-            var registry = Epl.Api.BundleRegistry.BundleInfo;
+            var registry = Epl.Api.BundleRegistry?.BundleInfo;
             var maintenance = Epl.Api.Services.BundleMaintenanceService;
             var seen = new HashSet<string>();
-            foreach (string raw in request.bundleIds ?? new string[0])
+            foreach (string bundleId in request.bundleIds ?? new string[0])
             {
-                string bundleId = (raw ?? "").Trim();
-                if (bundleId.Length == 0 || !seen.Add(bundleId)) continue;
+                // The id is passed exactly as the .json has it: EPL's registry
+                // keys are not trimmed or case-folded either.
+                if (string.IsNullOrEmpty(bundleId) || !seen.Add(bundleId)) continue;
                 var entry = new PriceResetEntry { bundleId = bundleId };
                 try
                 {
-                    if (!registry.TryGetValue(bundleId, out var info) || info == null)
-                    {
-                        entry.status = "not-loaded";
-                    }
-                    else
-                    {
-                        entry.name = info.Name;
-                        if (!info.IsLoaded) entry.status = "not-loaded";
-                        else if (maintenance.IsUninstalled(bundleId)) entry.status = "uninstalled";
-                        else entry.status = maintenance.ResetPrices(bundleId) ? "reset" : "no-price-data";
-                    }
+                    BundleInfo info = null;
+                    if (registry != null) registry.TryGetValue(bundleId, out info);
+                    entry.name = info?.Name;
+                    // Called exactly like EPL's own Force Price Reset button: no
+                    // checks first. The checks below only explain a "false".
+                    if (maintenance.ResetPrices(bundleId)) entry.status = "reset";
+                    else if (info == null) entry.status = "not-loaded";
+                    else if (maintenance.IsUninstalled(bundleId)) entry.status = "uninstalled";
+                    else if (!info.IsLoaded) entry.status = "not-loaded";
+                    else entry.status = "no-price-data";
                 }
                 catch (Exception e)
                 {
@@ -129,6 +131,7 @@ namespace RTCGOManagerBridge
                     entry.error = e.Message;
                     Log.LogError($"Price reset failed for bundle '{bundleId}': {e}");
                 }
+                Log.LogInfo($"Price reset '{bundleId}'{(entry.name != null ? $" ({entry.name})" : "")}: {entry.status}");
                 result.results.Add(entry);
             }
             int done = result.results.FindAll(r => r.status == "reset").Count;
@@ -136,7 +139,51 @@ namespace RTCGOManagerBridge
             return result;
         }
 
-        private void WriteResult(PriceResetResult result) => WriteAtomic(_resultPath, JsonUtility.ToJson(result, true));
+        // Written by hand, not with JsonUtility: for a plugin assembly Unity's
+        // serializer drops the list of nested [Serializable] entries, so the
+        // manager got an empty results list even though the reset worked.
+        private void WriteResult(PriceResetResult r)
+        {
+            var sb = new StringBuilder();
+            sb.Append("{\n  \"id\": ").Append(Str(r.id))
+              .Append(",\n  \"ready\": ").Append(r.ready ? "true" : "false")
+              .Append(",\n  \"error\": ").Append(Str(r.error))
+              .Append(",\n  \"finishedAt\": ").Append(Str(r.finishedAt))
+              .Append(",\n  \"results\": [");
+            for (int i = 0; i < r.results.Count; i++)
+            {
+                var e = r.results[i];
+                sb.Append(i == 0 ? "\n    " : ",\n    ")
+                  .Append("{ \"bundleId\": ").Append(Str(e.bundleId))
+                  .Append(", \"name\": ").Append(Str(e.name))
+                  .Append(", \"status\": ").Append(Str(e.status))
+                  .Append(", \"error\": ").Append(Str(e.error)).Append(" }");
+            }
+            sb.Append(r.results.Count > 0 ? "\n  ]\n}\n" : "]\n}\n");
+            WriteAtomic(_resultPath, sb.ToString());
+        }
+
+        private static string Str(string v)
+        {
+            if (v == null) return "null";
+            var sb = new StringBuilder(v.Length + 2).Append('"');
+            foreach (char c in v)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.Append('"').ToString();
+        }
 
         private void WriteHeartbeat()
         {
@@ -147,7 +194,9 @@ namespace RTCGOManagerBridge
                 lastSeen = DateTime.UtcNow.ToString("o"),
                 eplReady = Epl.IsAvailable && Epl.Api != null && Epl.Api.IsBundleLoadingComplete,
             };
-            WriteAtomic(_heartbeatPath, JsonUtility.ToJson(hb, true));
+            WriteAtomic(_heartbeatPath,
+                "{\n  \"version\": " + Str(hb.version) + ",\n  \"startedAt\": " + Str(hb.startedAt) +
+                ",\n  \"lastSeen\": " + Str(hb.lastSeen) + ",\n  \"eplReady\": " + (hb.eplReady ? "true" : "false") + "\n}\n");
         }
 
         private static void WriteAtomic(string path, string text)

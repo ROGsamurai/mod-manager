@@ -618,10 +618,15 @@ export default function EplEditor({ notify, gameFound = true }) {
   const runReset = async () => {
     setReset(r => ({ ...r, busy: true, error: null, results: null }));
     const res = await window.api.eplResetPrices([...reset.picked]);
-    setReset(r => ({ ...r, busy: false, results: res?.success ? res.results : null, error: res?.success ? null : (res?.error || 'Could not reset prices') }));
-    if (res?.success) {
-      const n = res.results.filter(x => x.status === 'reset').length;
-      notify(tf(t, 'Prices reset for {n} bundles. Save in the game to keep them.', { n }), n ? 'success' : 'warn', 7000);
+    const results = res?.success && Array.isArray(res.results) ? res.results : null;
+    const empty = results && results.length === 0;
+    setReset(r => ({ ...r, busy: false, results: empty ? null : results,
+      error: !res?.success ? (res?.error || 'Could not reset prices')
+        : empty ? 'The game answered but did not report any bundles. Check BepInEx/LogOutput.log for RTCGO Manager Bridge.' : null }));
+    if (results && !empty) {
+      const n = results.filter(x => x.status === 'reset').length;
+      if (n) notify(tf(t, 'Prices reset for {n} bundles. Save in the game to keep them.', { n }), 'success', 7000);
+      else notify(t('No prices were reset. The reason is shown next to each bundle.'), 'warn', 7000);
     }
   };
 
@@ -785,7 +790,8 @@ export default function EplEditor({ notify, gameFound = true }) {
                 {dirty && <div style={{ fontSize: 12.5, color: 'var(--accent)' }}>{t('The open file has unsaved changes. Save them first so the reset uses them after a game restart.')}</div>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {editedBundles.map(f => {
-                    const r = reset.results?.find(x => x.bundleId === f.bundleId);
+                    const norm = v => String(v ?? '').trim().toLowerCase();
+                    const r = reset.results?.find(x => x.bundleId === f.bundleId) || reset.results?.find(x => norm(x.bundleId) === norm(f.bundleId));
                     return (
                       <label key={f.bundleId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-base)', cursor: 'pointer' }}>
                         <input type="checkbox" checked={reset.picked.has(f.bundleId)} disabled={reset.busy}
@@ -800,6 +806,12 @@ export default function EplEditor({ notify, gameFound = true }) {
                     );
                   })}
                 </div>
+                {reset.results?.some(x => !editedBundles.some(f => String(f.bundleId ?? '').trim().toLowerCase() === String(x.bundleId ?? '').trim().toLowerCase())) && (
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                    {reset.results.filter(x => !editedBundles.some(f => String(f.bundleId ?? '').trim().toLowerCase() === String(x.bundleId ?? '').trim().toLowerCase()))
+                      .map(x => <div key={x.bundleId} className="mono">{x.bundleId}: {statusText[x.status] || x.status}{x.error ? ` (${x.error})` : ''}</div>)}
+                  </div>
+                )}
                 {anyStale && (
                   <div style={{ fontSize: 12.5, color: 'var(--accent)', padding: '8px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)', border: '1px solid var(--accent-border)', lineHeight: 1.45 }}>
                     {t('Some of these files were saved after the game started. EPL reads bundle files when the game starts, so restart the game first, or the new prices are made from the old settings.')}

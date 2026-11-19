@@ -88,7 +88,8 @@ function status(gamePath) {
  * the bridge is missing, or no answer comes back in time.
  */
 async function resetPrices(gamePath, bundleIds) {
-  const ids = [...new Set((bundleIds || []).map(s => String(s || '').trim()).filter(Boolean))];
+  // Sent exactly as the .json has them; EPL's registry keys are not trimmed.
+  const ids = [...new Set((bundleIds || []).map(s => String(s ?? '')).filter(s => s.trim()))];
   if (!ids.length) return { success: false, error: 'No bundles to reset.' };
   const st = status(gamePath);
   if (!st.running) {
