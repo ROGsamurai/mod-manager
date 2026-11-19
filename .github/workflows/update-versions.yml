@@ -1,0 +1,49 @@
+name: Update mod version list
+
+# Rebuilds versions.json from the Nexus API once a day and commits it if it
+# changed. The Mod Manager reads that file; it never calls the API itself, so
+# the number of users has no effect on API usage.
+on:
+  schedule:
+    - cron: '17 5 * * *'      # 05:17 UTC daily — off the hour to avoid the rush
+  workflow_dispatch:           # lets you run it by hand from the Actions tab
+    inputs:
+      full_refresh:
+        description: 'Re-fetch every tracked mod instead of only recent changes'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write              # needed to commit versions.json back
+
+concurrency:
+  group: update-versions
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build versions.json
+        env:
+          NEXUS_API_KEY: ${{ secrets.NEXUS_API_KEY }}
+          FULL_REFRESH: ${{ inputs.full_refresh && '1' || '0' }}
+        run: node tools/build-versions.mjs
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- versions.json; then
+            echo "No version changes."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add versions.json
+          git commit -m "Update mod versions ($(date -u +%Y-%m-%d))"
+          git push

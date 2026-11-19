@@ -7,6 +7,7 @@ import StagingView from './components/StagingView';
 import InstalledMods from './components/InstalledMods';
 import ProfileManager from './components/ProfileManager';
 import ConfigEditor from './components/ConfigEditor';
+import EplEditor from './components/EplEditor';
 import Settings from './components/Settings';
 import Home from './components/Home';
 import GameLog from './components/GameLog';
@@ -370,6 +371,7 @@ function AppInner() {
           {view==='staging'&&<StagingView autoInstall={autoInstall} onAutoInstallTaken={() => setAutoInstall(null)} staged={staged} onInstall={handleInstall} onAdd={handleAdd} onRefresh={refreshStaged} notify={notify} installing={installing} installProgress={installProgress} gameFound={bepinex.gameFound !== false}/>}
           {view==='mods'&&<InstalledMods openFilter={modsFilter} mods={mods} conflicts={conflicts} updates={updates} latestVersions={latestVersions} onToggle={handleToggle} onRemove={handleRemove} onMarkCore={handleMarkCore} onRename={handleRename} togglingId={togglingId} toggleProgress={toggleProgress}/>}
           {view==='config'&&<ConfigEditor notify={notify}/>}
+          {view==='epl'&&<EplEditor notify={notify} gameFound={bepinex.gameFound !== false}/>}
           {view==='profiles'&&<ProfileManager mods={mods} notify={notify} onRefresh={refreshMods}/>}
           {view==='settings'&&<Settings gamePath={gamePath} bepinex={bepinex} themeId={themeId} onChangeTheme={changeTheme}
             notify={notify} onRefreshMods={refreshMods} onRefreshStaged={refreshStaged}

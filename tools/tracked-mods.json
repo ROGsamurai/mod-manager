@@ -1,0 +1,58 @@
+[
+  {
+    "id": 69,
+    "name": "TextureReplacer"
+  },
+  {
+    "id": 496,
+    "name": "Enhanced Prefab Loader"
+  },
+  {
+    "id": 577,
+    "name": "Pokemon Expansions, Accessories, Figurines & Statues"
+  },
+  {
+    "id": 612,
+    "name": "Grading Overhaul"
+  },
+  {
+    "id": 617,
+    "name": "Holographic Overhaul"
+  },
+  {
+    "id": 685,
+    "name": "Phone - Overhaul"
+  },
+  {
+    "id": 867,
+    "name": "Collection Tracker"
+  },
+  {
+    "id": 895,
+    "name": "RTCGO Custom TV"
+  },
+  {
+    "id": 1084,
+    "name": "EPL Demand"
+  },
+  {
+    "id": 1100,
+    "name": "EPL Card Animator"
+  },
+  {
+    "id": 1116,
+    "name": "Enhanced Binder"
+  },
+  {
+    "id": 1144,
+    "name": "Enhanced Prefab Loader API"
+  },
+  {
+    "id": 1175,
+    "name": "Pokemon Pocket Expansions"
+  },
+  {
+    "id": 1555,
+    "name": "BepInEx with Configuration Manager"
+  }
+]

@@ -13,6 +13,8 @@ const store = new Store({ name: 'mod-manager' });
 const modManager = require('./mod-manager');
 const updateCheck = require('./update-check');
 const gameDetector = require('./game-detector');
+const eplJson = require('./epl-json');
+const eplBridge = require('./epl-bridge');
 
 // Safety net: log uncaught exceptions and unhandled rejections instead of crashing.
 // Electron's default behavior shows an ugly "A JavaScript error occurred" dialog for
@@ -485,6 +487,52 @@ ipcMain.handle('config:save', (_, filename, section, key, value) => {
   try { return modManager.saveConfigValue(filename, section, key, value); }
   catch (e) { return { success: false, error: e.message }; }
 });
+
+// EPL .json Editor. Backups of edited files go in the manager's data folder.
+const eplReady = () => { eplJson.init(app.getPath('userData')); return modManager.gamePath; };
+ipcMain.handle('epl:scan', () => { try { return eplJson.scan(eplReady()); } catch (e) { return { success: false, error: e.message, files: [] }; } });
+ipcMain.handle('epl:read', (_, file) => eplJson.read(eplReady(), file));
+ipcMain.handle('epl:save', (_, file, data) => {
+  const gp = eplReady();
+  const r = eplJson.save(gp, file, data);
+  // Editing a bundle means the player will want its prices reset in the game,
+  // so put the bridge plugin in now instead of asking them to install it.
+  if (r?.success) { try { r.bridge = eplBridge.ensureInstalled(gp); } catch (e) { r.bridge = { installed: false, error: e.message }; } }
+  return r;
+});
+ipcMain.handle('epl:restore', (_, file) => eplJson.restore(eplReady(), file));
+// Card table to and from a spreadsheet: CSV files through the system file
+// dialogs, and tab-separated text through the clipboard.
+ipcMain.handle('epl:export-csv', async (_, text, defaultName) => {
+  try {
+    const safe = String(defaultName || 'cards').replace(/[<>:"/\\|?*]+/g, '_').slice(0, 80) || 'cards';
+    const r = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export cards to CSV', defaultPath: path.join(app.getPath('documents'), `${safe}.csv`),
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    });
+    if (r.canceled || !r.filePath) return { success: false, canceled: true };
+    // A UTF-8 byte order mark so Excel opens names like "Pokémon" correctly.
+    fs.writeFileSync(r.filePath, '\uFEFF' + String(text), 'utf8');
+    return { success: true, path: r.filePath };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('epl:import-csv', async () => {
+  try {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import cards from CSV', properties: ['openFile'],
+      filters: [{ name: 'Spreadsheet text', extensions: ['csv', 'tsv', 'txt'] }],
+    });
+    if (r.canceled || !r.filePaths?.length) return { success: false, canceled: true };
+    const st = fs.statSync(r.filePaths[0]);
+    if (st.size > 20 * 1024 * 1024) return { success: false, error: 'That file is too large.' };
+    return { success: true, text: fs.readFileSync(r.filePaths[0], 'utf8'), name: path.basename(r.filePaths[0]) };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('epl:copy', (_, text) => { try { require('electron').clipboard.writeText(String(text)); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
+ipcMain.handle('epl:paste', () => { try { return { success: true, text: require('electron').clipboard.readText() }; } catch (e) { return { success: false, error: e.message }; } });
+ipcMain.handle('epl:bridge-status', () => { try { return eplBridge.status(modManager.gamePath); } catch (e) { return { installed: false, running: false, error: e.message }; } });
+ipcMain.handle('epl:reset-prices', (_, bundleIds) => eplBridge.resetPrices(modManager.gamePath, bundleIds));
+ipcMain.handle('epl:show', (_, file) => { try { shell.showItemInFolder(file); return { success: true }; } catch (e) { return { success: false, error: e.message }; } });
 
 // Dependencies
 ipcMain.handle('mods:check-deps', () => { try { return modManager.checkDependencies(); } catch (e) { console.error('[mods:check-deps]', e); return []; } });

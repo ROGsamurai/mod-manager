@@ -5461,7 +5461,7 @@ class ModManager {
       }
     }
 
-    const skipDirs = new Set(['core', 'cache', 'config', 'configurationmanager']);
+    const skipDirs = new Set(['core', 'cache', 'config', 'configurationmanager', 'rtcgomanagerbridge']);  // the manager's own bridge plugin is not a mod
     const pluginsDir = path.join(this.gamePath, 'BepInEx', 'plugins');
     if (fs.existsSync(pluginsDir)) {
       for (const entry of fs.readdirSync(pluginsDir, { withFileTypes: true })) {

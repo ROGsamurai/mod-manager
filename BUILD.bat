@@ -30,6 +30,17 @@ call npm run build:renderer
 if %errorlevel% neq 0 ( color 0C & echo. & echo [ERROR] UI build failed. & pause & exit /b 1 )
 echo. & echo [OK] UI built. & echo.
 
+if not exist "assets\bridge\RTCGOManagerBridge.dll" (
+    color 0E
+    echo [WARNING] assets\bridge\RTCGOManagerBridge.dll is missing.
+    echo           Build bridge\RTCGOManagerBridge in Release first, or the
+    echo           manager cannot install the bridge and Reset prices in game
+    echo           will not work for players.
+    echo.
+    pause
+    color 0A
+)
+
 echo ============================================
 echo   Step 3: Packaging portable .exe...
 echo ============================================

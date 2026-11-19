@@ -35,6 +35,10 @@ const NAV = [
     icon: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h8" /><path d="M8 13h5" /></>,
   },
   {
+    id: 'epl', labelKey: 'EPL .json Editor',
+    icon: <><path d="M8 4H7a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h1" /><path d="M16 4h1a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-1" /></>,
+  },
+  {
     id: 'profiles', labelKey: 'Profiles',
     icon: <><path d="M4 5h12" /><path d="M4 12h16" /><path d="M4 19h9" /></>,
   },

@@ -1,0 +1,10 @@
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\bin\Release\netstandard2.1\RTCGOManagerBridge.deps.json
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\bin\Release\netstandard2.1\RTCGOManagerBridge.dll
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\bin\Release\netstandard2.1\RTCGOManagerBridge.pdb
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.csproj.AssemblyReference.cache
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.AssemblyInfoInputs.cache
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.AssemblyInfo.cs
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.csproj.CoreCompileInputs.cache
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.dll
+C:\Users\rogsa\OneDrive\Desktop\FREE LAUNCHER\bridge\RTCGOManagerBridge\obj\Release\netstandard2.1\RTCGOManagerBridge.pdb

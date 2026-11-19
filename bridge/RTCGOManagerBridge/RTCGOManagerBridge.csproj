@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Build:  dotnet build -c Release -p:GameDir="C:\Path\To\TCG Card Shop Simulator"
+    Output: bin\Release\netstandard2.1\RTCGOManagerBridge.dll
+    The build also copies the DLL to ..\..\assets\bridge\, where the mod
+    manager ships it from and installs it into the game on the first .json save.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>RTCGOManagerBridge</AssemblyName>
+    <RootNamespace>RTCGOManagerBridge</RootNamespace>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GameDir Condition="'$(GameDir)' == ''">D:\Games\Steam\steamapps\common\TCG Card Shop Simulator</GameDir>
+    <ManagedDir>$(GameDir)\Card Shop Simulator_Data\Managed</ManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="EnhancedPrefabLoader.API">
+      <HintPath>$(GameDir)\BepInEx\plugins\EnhancedPrefabLoader.API\EnhancedPrefabLoader.API.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>$(ManagedDir)\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- EPL's API exposes game enums (EItemType, ECardExpansionType, ...) in its
+         types, so the compiler needs the game assembly to resolve them. -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Ship the built plugin with the mod manager. -->
+  <Target Name="CopyToManagerAssets" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\assets\bridge\" />
+  </Target>
+</Project>
